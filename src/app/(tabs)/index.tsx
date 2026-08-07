@@ -92,7 +92,6 @@ export default function HomeScreen() {
             <ThemedText style={styles.subtitle} themeColor="textSecondary">
               Your Safety Companion
             </ThemedText>
-
             <Pressable
               onPress={() => router.push('/settings')}
               style={({ pressed }) => [
@@ -444,6 +443,46 @@ const styles = StyleSheet.create({
     padding: Spacing.three,
     borderRadius: Spacing.three,
     gap: Spacing.one,
+  },
+  aiRiskCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 18,
+    borderRadius: 20,
+    backgroundColor: '#F5F3FF',
+    borderWidth: 1,
+    borderColor: '#DDD6FE',
+  },
+
+  aiRiskIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#7C3AED',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  aiRiskEmoji: {
+    fontSize: 26,
+  },
+
+  aiRiskInfo: {
+    flex: 1,
+    marginLeft: 14,
+    marginRight: 8,
+  },
+
+  aiRiskTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+  },
+
+  aiRiskDescription: {
+    fontSize: 12,
+    color: '#64748B',
+    lineHeight: 18,
+    marginTop: 4,
   },
   pressed: {
     opacity: 0.8,

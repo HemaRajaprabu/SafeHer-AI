@@ -21,13 +21,26 @@ export default function SOSScreen() {
     const [isActivated, setIsActivated] = useState(false);
     const playSOSSound = async () => {
         try {
+            await Audio.setAudioModeAsync({
+                playsInSilentMode: true,
+                shouldDuckAndroid: false,
+            });
+
             const { sound } = await Audio.Sound.createAsync(
-                require('@/assets/sounds/sos-alert.mp3')
+                require('@/assets/sounds/sos-alert.mp3'),
+                {
+                    shouldPlay: true,
+                    volume: 1.0,
+                }
             );
 
-            await sound.playAsync();
+            sound.setOnPlaybackStatusUpdate((status) => {
+                if (status.isLoaded && status.didJustFinish) {
+                    sound.unloadAsync();
+                }
+            });
         } catch (error) {
-            console.log('Sound error:', error);
+            console.log('SOS Sound Error:', error);
         }
     };
     useEffect(() => {

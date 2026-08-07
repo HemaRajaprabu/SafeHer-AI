@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
     Alert,
     Pressable,
@@ -68,6 +69,23 @@ export default function SafetyAnalysisScreen() {
     const [riskScore, setRiskScore] = useState<number | null>(null);
 
     const [riskLevel, setRiskLevel] = useState<RiskLevel | null>(null);
+    const [automaticSOS, setAutomaticSOS] = useState(false);
+    useEffect(() => {
+        const loadAutomaticSOS = async () => {
+            try {
+                const savedValue =
+                    await AsyncStorage.getItem('automaticSOS');
+
+                if (savedValue !== null) {
+                    setAutomaticSOS(savedValue === 'true');
+                }
+            } catch (error) {
+                console.log('Error loading Automatic SOS setting:', error);
+            }
+        };
+
+        loadAutomaticSOS();
+    }, []);
 
     const analyzeRisk = () => {
         if (!selectedSituation) {
@@ -114,12 +132,11 @@ export default function SafetyAnalysisScreen() {
 
         return 'No immediate high-risk pattern was detected. Continue to stay aware of your surroundings.';
     };
-
-    const handleSOSRecommendation = () => {
-        if (riskLevel === 'high') {
+    useEffect(() => {
+        if (riskLevel === 'high' && automaticSOS) {
             Alert.alert(
-                '🚨 High Risk Detected',
-                'A high-risk situation was detected. Would you like to open Emergency SOS?',
+                '🚨 Automatic SOS',
+                'High-risk situation detected. Automatic SOS is enabled.',
                 [
                     {
                         text: 'Cancel',
@@ -127,17 +144,28 @@ export default function SafetyAnalysisScreen() {
                     },
                     {
                         text: 'Open SOS',
-                        onPress: () => router.push('/sos'),
+                        onPress: () => {
+                            router.push('/sos');
+                        },
                     },
                 ]
             );
-        } else {
+        }
+    }, [riskLevel, automaticSOS]);
+
+    const handleSOSRecommendation = () => {
+        if (riskLevel !== 'high') {
             Alert.alert(
                 'Safety Recommendation',
                 'The current risk level does not require immediate SOS activation. Stay alert and move to a safe location if possible.'
             );
+            return;
         }
+
+        router.push('/sos');
     };
+
+
 
     return (
         <ThemedView style={styles.container}>
