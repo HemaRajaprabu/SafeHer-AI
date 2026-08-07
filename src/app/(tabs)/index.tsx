@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
+import { router } from 'expo-router';
 
 import { AnimatedIcon } from '@/components/animated-icon';
 import { ThemedText } from '@/components/themed-text';
@@ -41,7 +42,7 @@ function getDevMenuHint() {
 export default function HomeScreen() {
   const theme = useTheme();
   const { profile, signOut } = useAuth();
-  
+
   const [todos, setTodos] = useState<Todo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -51,14 +52,14 @@ export default function HomeScreen() {
       try {
         setLoading(true);
         setError(null);
-        
+
         // Fetch from Supabase todos table
         const { data, error } = await supabase.from('todos').select();
-        
+
         if (error) {
           throw error;
         }
-        
+
         if (data) {
           setTodos(data as Todo[]);
         }
@@ -78,7 +79,7 @@ export default function HomeScreen() {
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
-        <ScrollView 
+        <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
@@ -91,6 +92,29 @@ export default function HomeScreen() {
             <ThemedText style={styles.subtitle} themeColor="textSecondary">
               Your Safety Companion
             </ThemedText>
+
+            <Pressable
+              onPress={() => router.push('/settings')}
+              style={({ pressed }) => [
+                styles.settingsButton,
+                pressed && styles.pressed,
+              ]}
+            >
+              <SymbolView
+                name={{
+                  ios: 'gearshape.fill',
+                  android: 'settings',
+                  web: 'settings',
+                }}
+                size={20}
+                tintColor="#FFFFFF"
+              />
+
+              <ThemedText style={styles.settingsButtonText}>
+                Safety Settings
+              </ThemedText>
+            </Pressable>
+
           </ThemedView>
 
           {/* User Profile Card */}
@@ -114,7 +138,7 @@ export default function HomeScreen() {
                   </ThemedText>
                 </View>
               </View>
-              
+
               <Pressable
                 style={({ pressed }) => [
                   styles.logoutButton,
@@ -132,22 +156,54 @@ export default function HomeScreen() {
               </Pressable>
             </ThemedView>
           )}
+          {/* AI Risk Analysis */}
+          <Pressable
+            onPress={() => router.push('/safety-analysis')}
+            style={({ pressed }) => [
+              styles.aiRiskCard,
+              pressed && styles.pressed,
+            ]}
+          >
+            <View style={styles.aiRiskIcon}>
+              <ThemedText style={styles.aiRiskEmoji}>🤖</ThemedText>
+            </View>
+
+            <View style={styles.aiRiskInfo}>
+              <ThemedText style={styles.aiRiskTitle}>
+                AI Risk Analysis
+              </ThemedText>
+
+              <ThemedText style={styles.aiRiskDescription}>
+                Report a dangerous situation and let SafeHer AI analyze the risk.
+              </ThemedText>
+            </View>
+
+            <SymbolView
+              name={{
+                ios: 'chevron.right',
+                android: 'chevron-right',
+                web: 'chevron-right',
+              }}
+              size={22}
+              tintColor="#7C3AED"
+            />
+          </Pressable>
 
           {/* Supabase Connection Status Card */}
           <ThemedView type="backgroundElement" style={styles.statusCard}>
             <ThemedView style={styles.statusHeader}>
-              <ThemedView 
+              <ThemedView
                 style={[
-                  styles.statusIndicator, 
+                  styles.statusIndicator,
                   { backgroundColor: supabaseUrl ? '#10B981' : '#EF4444' }
-                ]} 
+                ]}
               />
               <ThemedText type="smallBold">
                 Supabase Connection Status
               </ThemedText>
             </ThemedView>
             <ThemedText type="small" themeColor="textSecondary" style={styles.statusDetails}>
-              {supabaseUrl 
+              {supabaseUrl
                 ? `Connected to project url: \n${supabaseUrl}`
                 : 'Disconnected. Missing EXPO_PUBLIC_SUPABASE_URL in env configuration.'
               }
@@ -159,7 +215,7 @@ export default function HomeScreen() {
             <ThemedText type="subtitle" style={styles.cardTitle}>
               Database Todos
             </ThemedText>
-            
+
             {loading ? (
               <ThemedView style={styles.loaderContainer}>
                 <ActivityIndicator size="small" color={theme.text} />
@@ -169,13 +225,13 @@ export default function HomeScreen() {
               </ThemedView>
             ) : error ? (
               <ThemedView style={styles.errorContainer}>
-                <SymbolView 
-                  name={{ ios: 'exclamationmark.triangle.fill', android: 'warning', web: 'warning' }} 
-                  size={20} 
+                <SymbolView
+                  name={{ ios: 'exclamationmark.triangle.fill', android: 'warning', web: 'warning' }}
+                  size={20}
                   tintColor="#F59E0B"
                 />
                 <ThemedText type="small" style={styles.errorText}>
-                  {error.includes('relation "todos" does not exist') 
+                  {error.includes('relation "todos" does not exist')
                     ? 'Table "todos" does not exist in your database yet. Go to your Supabase dashboard and execute the SQL query to create the todos table.'
                     : error
                   }
@@ -183,9 +239,9 @@ export default function HomeScreen() {
               </ThemedView>
             ) : todos.length === 0 ? (
               <ThemedView style={styles.emptyContainer}>
-                <SymbolView 
-                  name={{ ios: 'tray.fill', android: 'folder', web: 'folder' }} 
-                  size={24} 
+                <SymbolView
+                  name={{ ios: 'tray.fill', android: 'folder', web: 'folder' }}
+                  size={24}
                   tintColor={theme.textSecondary}
                 />
                 <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
@@ -197,15 +253,15 @@ export default function HomeScreen() {
                 {todos.map((todo) => (
                   <ThemedView key={todo.id} style={styles.todoItem}>
                     <SymbolView
-                      name={{ 
-                        ios: todo.is_completed ? 'checkmark.circle.fill' : 'circle', 
+                      name={{
+                        ios: todo.is_completed ? 'checkmark.circle.fill' : 'circle',
                         android: todo.is_completed ? 'check' : 'radio-button-off',
-                        web: todo.is_completed ? 'check' : 'circle' 
+                        web: todo.is_completed ? 'check' : 'circle'
                       }}
                       size={18}
                       tintColor={todo.is_completed ? '#10B981' : theme.textSecondary}
                     />
-                    <ThemedText 
+                    <ThemedText
                       style={[
                         styles.todoText,
                         todo.is_completed && styles.todoCompletedText
@@ -391,5 +447,22 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.8,
+  },
+  settingsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: Spacing.three,
+    paddingHorizontal: Spacing.four,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: '#7C3AED',
+    gap: Spacing.two,
+  },
+
+  settingsButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
   },
 });

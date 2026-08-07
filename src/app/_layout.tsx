@@ -1,4 +1,4 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { ActivityIndicator, StyleSheet, useColorScheme } from 'react-native';
 
@@ -22,7 +22,26 @@ function AuthOrApp() {
     );
   }
 
-  return session ? <AppTabs /> : <AuthFlow />;
+  if (!session) {
+    return <AuthFlow />;
+  }
+
+  return (
+    <Stack>
+      <Stack.Screen
+        name="(tabs)"
+        options={{ headerShown: false }}
+      />
+
+      <Stack.Screen
+        name="sos"
+        options={{
+          title: 'Emergency SOS',
+          headerBackTitle: 'Back',
+        }}
+      />
+    </Stack>
+  );
 }
 
 export default function RootLayout() {
