@@ -78,7 +78,7 @@ export default function ExploreScreen() {
           <View style={styles.grid}>
             {/* Emergency Contacts */}
             <Pressable
-              onPress={() => showComingSoon('Emergency Contacts')}
+              onPress={() => router.push('/emergency-contacts' as any)}
               style={({ pressed }) => [
                 styles.featureCard,
                 { backgroundColor: theme.backgroundElement },

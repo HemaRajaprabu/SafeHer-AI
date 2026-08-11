@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
     Alert,
     Linking,
@@ -15,16 +16,37 @@ import { Audio } from 'expo-av';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 
+interface Contact {
+    id: string;
+    name: string;
+    phone: string;
+}
+
 export default function SOSScreen() {
     const [countdown, setCountdown] = useState(5);
     const [isCounting, setIsCounting] = useState(false);
     const [isActivated, setIsActivated] = useState(false);
+    const [contacts, setContacts] = useState<Contact[]>([]);
+
+    useEffect(() => {
+        const loadContacts = async () => {
+            try {
+                const saved = await AsyncStorage.getItem('emergencyContacts');
+                if (saved !== null) {
+                    setContacts(JSON.parse(saved));
+                }
+            } catch (error) {
+                console.log('Error loading contacts:', error);
+            }
+        };
+        loadContacts();
+    }, []);
     const playSOSSound = async () => {
         try {
             await Audio.setAudioModeAsync({
                 playsInSilentMode: true,
                 shouldDuckAndroid: false,
-            });
+            } as any);
 
             const { sound } = await Audio.Sound.createAsync(
                 require('@/assets/sounds/sos-alert.mp3'),
@@ -51,10 +73,31 @@ export default function SOSScreen() {
             setIsActivated(true);
             playSOSSound();
 
-            Alert.alert(
-                '🚨 SOS Activated',
-                'Emergency SOS has been activated. Your emergency contacts can now be alerted.',
-            );
+            const notifyContacts = async () => {
+                try {
+                    const saved = await AsyncStorage.getItem('emergencyContacts');
+                    const contactsList: Contact[] = saved ? JSON.parse(saved) : [];
+                    if (contactsList.length === 0) {
+                        Alert.alert(
+                            '🚨 SOS Activated',
+                            'Emergency SOS has been activated! No emergency contacts configured. Please configure them in the Safety Center.'
+                        );
+                    } else {
+                        const contactDetails = contactsList.map((c) => `${c.name} (${c.phone})`).join(', ');
+                        Alert.alert(
+                            '🚨 SOS Activated',
+                            `Emergency SOS has been activated. Alerts have been sent to your emergency contacts:\n\n${contactDetails}`
+                        );
+                    }
+                } catch (error) {
+                    console.log('Error notifying emergency contacts:', error);
+                    Alert.alert(
+                        '🚨 SOS Activated',
+                        'Emergency SOS has been activated. Your emergency contacts can now be alerted.'
+                    );
+                }
+            };
+            notifyContacts();
 
             return;
         }
@@ -114,7 +157,7 @@ export default function SOSScreen() {
                                     ios: 'chevron.left',
                                     android: 'arrow-back',
                                     web: 'arrow-left',
-                                }}
+                                } as any}
                                 size={24}
                                 tintColor="#111827"
                             />
@@ -135,7 +178,7 @@ export default function SOSScreen() {
                                     ios: 'exclamationmark.triangle.fill',
                                     android: 'warning',
                                     web: 'warning',
-                                }}
+                                } as any}
                                 size={65}
                                 tintColor="#FFFFFF"
                             />
@@ -196,7 +239,7 @@ export default function SOSScreen() {
                                     ios: 'exclamationmark.triangle.fill',
                                     android: 'warning',
                                     web: 'warning',
-                                }}
+                                } as any}
                                 size={42}
                                 tintColor="#FFFFFF"
                             />
@@ -220,7 +263,7 @@ export default function SOSScreen() {
                                         ios: 'checkmark',
                                         android: 'check',
                                         web: 'check',
-                                    }}
+                                    } as any}
                                     size={30}
                                     tintColor="#FFFFFF"
                                 />
@@ -256,7 +299,7 @@ export default function SOSScreen() {
                                         ios: 'phone.fill',
                                         android: 'phone',
                                         web: 'phone',
-                                    }}
+                                    } as any}
                                     size={22}
                                     tintColor="#FFFFFF"
                                 />
@@ -281,7 +324,7 @@ export default function SOSScreen() {
                                         ios: 'location.fill',
                                         android: 'location-on',
                                         web: 'location',
-                                    }}
+                                    } as any}
                                     size={22}
                                     tintColor="#FFFFFF"
                                 />
@@ -306,7 +349,7 @@ export default function SOSScreen() {
                                         ios: 'person.2.fill',
                                         android: 'group',
                                         web: 'users',
-                                    }}
+                                    } as any}
                                     size={22}
                                     tintColor="#FFFFFF"
                                 />
@@ -318,7 +361,9 @@ export default function SOSScreen() {
                                 </ThemedText>
 
                                 <ThemedText style={styles.actionDescription}>
-                                    Contacts will be alerted in the next step
+                                    {contacts.length === 0
+                                        ? 'No emergency contacts configured.'
+                                        : `${contacts.length} contact(s) configured: ${contacts.map((c) => c.name).join(', ')}`}
                                 </ThemedText>
                             </View>
                         </View>

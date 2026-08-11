@@ -40,6 +40,13 @@ function AuthOrApp() {
           headerBackTitle: 'Back',
         }}
       />
+
+      <Stack.Screen
+        name="emergency-contacts"
+        options={{
+          headerShown: false,
+        }}
+      />
     </Stack>
   );
 }

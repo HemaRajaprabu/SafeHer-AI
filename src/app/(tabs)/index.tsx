@@ -1,6 +1,6 @@
 import * as Device from 'expo-device';
-import { useState, useEffect } from 'react';
-import { ActivityIndicator, Platform, Pressable, StyleSheet, ScrollView, View } from 'react-native';
+
+import { Platform, Pressable, StyleSheet, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 import { router } from 'expo-router';
@@ -12,13 +12,9 @@ import { WebBadge } from '@/components/web-badge';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/hooks/use-auth';
-import { supabase } from '@/utils/supabase';
 
-interface Todo {
-  id: number;
-  name: string;
-  is_completed?: boolean;
-}
+
+
 
 function getDevMenuHint() {
   if (Platform.OS === 'web') {
@@ -43,36 +39,7 @@ export default function HomeScreen() {
   const theme = useTheme();
   const { profile, signOut } = useAuth();
 
-  const [todos, setTodos] = useState<Todo[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function fetchTodos() {
-      try {
-        setLoading(true);
-        setError(null);
-
-        // Fetch from Supabase todos table
-        const { data, error } = await supabase.from('todos').select();
-
-        if (error) {
-          throw error;
-        }
-
-        if (data) {
-          setTodos(data as Todo[]);
-        }
-      } catch (err: any) {
-        console.error('Error fetching todos:', err);
-        setError(err.message || 'Failed to fetch items from database');
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchTodos();
-  }, []);
 
   const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
 
@@ -209,70 +176,7 @@ export default function HomeScreen() {
             </ThemedText>
           </ThemedView>
 
-          {/* Database Items Section (Todos) */}
-          <ThemedView type="backgroundElement" style={styles.databaseCard}>
-            <ThemedText type="subtitle" style={styles.cardTitle}>
-              Database Todos
-            </ThemedText>
 
-            {loading ? (
-              <ThemedView style={styles.loaderContainer}>
-                <ActivityIndicator size="small" color={theme.text} />
-                <ThemedText type="small" themeColor="textSecondary">
-                  Fetching database records...
-                </ThemedText>
-              </ThemedView>
-            ) : error ? (
-              <ThemedView style={styles.errorContainer}>
-                <SymbolView
-                  name={{ ios: 'exclamationmark.triangle.fill', android: 'warning', web: 'warning' }}
-                  size={20}
-                  tintColor="#F59E0B"
-                />
-                <ThemedText type="small" style={styles.errorText}>
-                  {error.includes('relation "todos" does not exist')
-                    ? 'Table "todos" does not exist in your database yet. Go to your Supabase dashboard and execute the SQL query to create the todos table.'
-                    : error
-                  }
-                </ThemedText>
-              </ThemedView>
-            ) : todos.length === 0 ? (
-              <ThemedView style={styles.emptyContainer}>
-                <SymbolView
-                  name={{ ios: 'tray.fill', android: 'folder', web: 'folder' }}
-                  size={24}
-                  tintColor={theme.textSecondary}
-                />
-                <ThemedText type="small" themeColor="textSecondary" style={styles.emptyText}>
-                  No todos found. Add items to your &quot;todos&quot; table to see them display here!
-                </ThemedText>
-              </ThemedView>
-            ) : (
-              <ThemedView style={styles.todoList}>
-                {todos.map((todo) => (
-                  <ThemedView key={todo.id} style={styles.todoItem}>
-                    <SymbolView
-                      name={{
-                        ios: todo.is_completed ? 'checkmark.circle.fill' : 'circle',
-                        android: todo.is_completed ? 'check' : 'radio-button-off',
-                        web: todo.is_completed ? 'check' : 'circle'
-                      }}
-                      size={18}
-                      tintColor={todo.is_completed ? '#10B981' : theme.textSecondary}
-                    />
-                    <ThemedText
-                      style={[
-                        styles.todoText,
-                        todo.is_completed && styles.todoCompletedText
-                      ]}
-                    >
-                      {todo.name}
-                    </ThemedText>
-                  </ThemedView>
-                ))}
-              </ThemedView>
-            )}
-          </ThemedView>
 
           {/* Dev Info Section */}
           <ThemedView type="backgroundElement" style={styles.infoCard}>
@@ -381,64 +285,7 @@ const styles = StyleSheet.create({
     fontFamily: Platform.select({ ios: 'CourierNewPSMT', android: 'monospace', web: 'monospace' }),
     backgroundColor: 'transparent',
   },
-  databaseCard: {
-    padding: Spacing.four,
-    borderRadius: Spacing.three,
-    gap: Spacing.three,
-  },
-  cardTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-  },
-  loaderContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-    paddingVertical: Spacing.two,
-    backgroundColor: 'transparent',
-  },
-  errorContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: Spacing.two,
-    padding: Spacing.three,
-    borderRadius: Spacing.two,
-    backgroundColor: 'rgba(245, 158, 11, 0.1)',
-  },
-  errorText: {
-    color: '#F59E0B',
-    flex: 1,
-    fontSize: 13,
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    paddingVertical: Spacing.four,
-    gap: Spacing.two,
-    backgroundColor: 'transparent',
-  },
-  emptyText: {
-    textAlign: 'center',
-    fontSize: 14,
-  },
-  todoList: {
-    gap: Spacing.two,
-    backgroundColor: 'transparent',
-  },
-  todoItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-    paddingVertical: Spacing.two,
-    backgroundColor: 'transparent',
-  },
-  todoText: {
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  todoCompletedText: {
-    textDecorationLine: 'line-through',
-    opacity: 0.6,
-  },
+
   infoCard: {
     padding: Spacing.three,
     borderRadius: Spacing.three,
