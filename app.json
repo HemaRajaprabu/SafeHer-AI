@@ -9,7 +9,12 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon",
-      "bundleIdentifier": "com.safeher.ai"
+      "bundleIdentifier": "com.safeher.ai",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "SafeHer AI needs your location to share it with your emergency contacts when SOS is activated.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "SafeHer AI needs your location to track your position in the background during active SOS incidents.",
+        "NSLocationAlwaysUsageDescription": "SafeHer AI needs your location to track your position in the background during active SOS incidents."
+      }
     },
     "android": {
       "package": "com.safeher.ai",
@@ -19,6 +24,13 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION"
+      ],
       "predictiveBackGestureEnabled": false
     },
     "web": {
@@ -33,6 +45,13 @@
           "backgroundColor": "#208AEF",
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysPermission": "Allow SafeHer AI to access your location in the background for active SOS tracking.",
+          "isAndroidBackgroundLocationEnabled": true
         }
       ]
     ],

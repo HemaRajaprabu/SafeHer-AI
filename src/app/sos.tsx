@@ -5,6 +5,7 @@ import {
     Linking,
     Pressable,
     ScrollView,
+    Share,
     StyleSheet,
     View,
 } from 'react-native';
@@ -12,6 +13,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 import { router } from 'expo-router';
 import { Audio } from 'expo-av';
+
+import { useLocation } from '@/hooks/use-location';
+import { useAuth } from '@/hooks/use-auth';
+import { supabase } from '@/utils/supabase';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -27,6 +32,115 @@ export default function SOSScreen() {
     const [isCounting, setIsCounting] = useState(false);
     const [isActivated, setIsActivated] = useState(false);
     const [contacts, setContacts] = useState<Contact[]>([]);
+
+    const { user } = useAuth();
+    const {
+        location: liveLocation,
+        loading: locationLoading,
+        error: locationError,
+        isTracking,
+        isBackgroundTracking,
+        startTracking,
+        stopTracking,
+        startBackgroundTracking,
+        stopBackgroundTracking,
+        refresh: refreshLocation,
+    } = useLocation();
+
+    const updateSupabaseLocation = async (loc: typeof liveLocation) => {
+        if (!user || !loc) return;
+        try {
+            const { error } = await supabase
+                .from('sos_locations')
+                .upsert({
+                    user_id: user.id,
+                    latitude: loc.latitude,
+                    longitude: loc.longitude,
+                    accuracy: loc.accuracy,
+                    is_active: true,
+                    updated_at: new Date().toISOString(),
+                });
+            if (error) {
+                console.log('Error updating location in Supabase:', error.message);
+            }
+        } catch (err) {
+            console.log('Supabase connection error:', err);
+        }
+    };
+
+    const endSupabaseSOS = async () => {
+        if (!user) return;
+        try {
+            const { error } = await supabase
+                .from('sos_locations')
+                .update({ is_active: false })
+                .eq('user_id', user.id);
+            if (error) {
+                console.log('Error updating SOS status in Supabase:', error.message);
+            }
+        } catch (err) {
+            console.log('Supabase connection error:', err);
+        }
+    };
+
+    useEffect(() => {
+        const syncActivatedState = async () => {
+            try {
+                if (isActivated) {
+                    await AsyncStorage.setItem('isSOSActive', 'true');
+                    
+                    // Attempt to start background tracking
+                    const bgSuccess = await startBackgroundTracking();
+                    if (!bgSuccess) {
+                        Alert.alert(
+                            "Background Tracking Restricted",
+                            "Continuous updates while your screen is locked require background location access. Tracking will proceed in the foreground only.",
+                            [{ text: "OK" }]
+                        );
+                    }
+                    
+                    // Also start foreground tracking as double-safety / fallback
+                    await startTracking((newLoc) => {
+                        updateSupabaseLocation(newLoc);
+                    });
+                } else {
+                    await AsyncStorage.setItem('isSOSActive', 'false');
+                    await stopBackgroundTracking();
+                    stopTracking();
+                    await endSupabaseSOS();
+                }
+            } catch (err) {
+                console.log('Error syncing SOS active state:', err);
+            }
+        };
+        syncActivatedState();
+    }, [isActivated]);
+
+    const shareSOSLocation = async () => {
+        if (liveLocation) {
+            try {
+                await Share.share({
+                    message: `I need help! Here is my live location: ${liveLocation.googleMapsLink}`,
+                });
+            } catch (err) {
+                console.log('Error sharing location:', err);
+            }
+        } else if (locationError) {
+            Alert.alert(
+                'Location Error',
+                `${locationError}\n\nWould you like to try retrieving your location again?`,
+                [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Retry', onPress: () => refreshLocation() }
+                ]
+            );
+        } else {
+            Alert.alert(
+                'Retrieving Location',
+                'Still waiting for GPS coordinates. Please wait a moment.'
+            );
+        }
+    };
 
     useEffect(() => {
         const loadContacts = async () => {
@@ -84,16 +198,23 @@ export default function SOSScreen() {
                         );
                     } else {
                         const contactDetails = contactsList.map((c) => `${c.name} (${c.phone})`).join(', ');
+                        const locationInfo = liveLocation 
+                             ? `Your live location link has been prepared:\n${liveLocation.googleMapsLink}\n\nSecure Live Tracking Viewer:\nsafeherai://track-victim?userId=${user?.id}`
+                             : `Unable to include location:\n${locationError || 'Retrieving GPS coordinates timed out.'}`;
+
                         Alert.alert(
                             '🚨 SOS Activated',
-                            `Emergency SOS has been activated. Alerts have been sent to your emergency contacts:\n\n${contactDetails}`
+                            `Emergency SOS has been activated. Alerts have been sent to your emergency contacts:\n\n${contactDetails}\n\n${locationInfo}`
                         );
                     }
                 } catch (error) {
                     console.log('Error notifying emergency contacts:', error);
+                    const fallbackLocationInfo = liveLocation
+                        ? `\n\nLive Location prepared: ${liveLocation.googleMapsLink}`
+                        : '';
                     Alert.alert(
                         '🚨 SOS Activated',
-                        'Emergency SOS has been activated. Your emergency contacts can now be alerted.'
+                        `Emergency SOS has been activated. Your emergency contacts can now be alerted.${fallbackLocationInfo}`
                     );
                 }
             };
@@ -317,7 +438,13 @@ export default function SOSScreen() {
                         </Pressable>
 
                         {/* Location */}
-                        <View style={styles.actionButton}>
+                        <Pressable
+                            onPress={shareSOSLocation}
+                            style={({ pressed }) => [
+                                styles.actionButton,
+                                pressed && styles.pressed,
+                            ]}
+                        >
                             <View style={styles.locationIcon}>
                                 <SymbolView
                                     name={{
@@ -336,10 +463,16 @@ export default function SOSScreen() {
                                 </ThemedText>
 
                                 <ThemedText style={styles.actionDescription}>
-                                    Location sharing will be connected next
+                                     {isTracking || isBackgroundTracking
+                                         ? `${isBackgroundTracking ? '🟢 Background Tracking Active' : '🟢 Tracking Active'}: ${liveLocation ? `${liveLocation.latitude.toFixed(4)}, ${liveLocation.longitude.toFixed(4)}` : 'Syncing...'} (Tap to share)` 
+                                         : locationLoading 
+                                             ? 'Fetching live location...' 
+                                             : liveLocation 
+                                                 ? `⚪ Tracking Stopped: ${liveLocation.latitude.toFixed(4)}, ${liveLocation.longitude.toFixed(4)} (Tap to share)` 
+                                                 : `⚪ Tracking Stopped: ${locationError || 'Unavailable'}. Tap to retry.`}
                                 </ThemedText>
                             </View>
-                        </View>
+                        </Pressable>
 
                         {/* Contacts */}
                         <View style={styles.actionButton}>

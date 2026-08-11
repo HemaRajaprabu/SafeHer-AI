@@ -91,7 +91,7 @@ export default function ExploreScreen() {
                     ios: 'person.2.fill',
                     android: 'group',
                     web: 'users',
-                  }}
+                  } as any}
                   size={25}
                   tintColor={theme.text}
                 />
@@ -111,7 +111,7 @@ export default function ExploreScreen() {
 
             {/* Location */}
             <Pressable
-              onPress={() => showComingSoon('Live Location')}
+              onPress={() => router.push('/live-location' as any)}
               style={({ pressed }) => [
                 styles.featureCard,
                 { backgroundColor: theme.backgroundElement },
@@ -124,7 +124,7 @@ export default function ExploreScreen() {
                     ios: 'location.fill',
                     android: 'location-on',
                     web: 'location',
-                  }}
+                  } as any}
                   size={25}
                   tintColor={theme.text}
                 />
@@ -144,7 +144,7 @@ export default function ExploreScreen() {
 
             {/* Safety Timer */}
             <Pressable
-              onPress={() => showComingSoon('Safety Timer')}
+              onPress={() => router.push('/safety-timer')}
               style={({ pressed }) => [
                 styles.featureCard,
                 { backgroundColor: theme.backgroundElement },
@@ -157,7 +157,7 @@ export default function ExploreScreen() {
                     ios: 'timer',
                     android: 'timer',
                     web: 'clock',
-                  }}
+                  } as any}
                   size={25}
                   tintColor={theme.text}
                 />
@@ -190,7 +190,7 @@ export default function ExploreScreen() {
                     ios: 'map.fill',
                     android: 'map',
                     web: 'map',
-                  }}
+                  } as any}
                   size={25}
                   tintColor={theme.text}
                 />

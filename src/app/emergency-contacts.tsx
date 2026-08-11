@@ -17,18 +17,23 @@ import { router } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useTheme } from '@/hooks/use-theme';
+import { useAuth } from '@/hooks/use-auth';
+import { supabase } from '@/utils/supabase';
 
 interface Contact {
   id: string;
   name: string;
   phone: string;
+  email: string;
 }
 
 export default function EmergencyContactsScreen() {
   const theme = useTheme();
+  const { user } = useAuth();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
 
   // Load contacts on mount
   useEffect(() => {
@@ -59,9 +64,10 @@ export default function EmergencyContactsScreen() {
   const addContact = () => {
     const trimmedName = name.trim();
     const trimmedPhone = phone.trim();
+    const trimmedEmail = email.trim().toLowerCase();
 
-    if (!trimmedName || !trimmedPhone) {
-      Alert.alert('Validation Error', 'Please enter both a contact name and a phone number.');
+    if (!trimmedName || !trimmedPhone || !trimmedEmail) {
+      Alert.alert('Validation Error', 'Please enter a contact name, phone number, and email address.');
       return;
     }
 
@@ -72,16 +78,47 @@ export default function EmergencyContactsScreen() {
       return;
     }
 
+    // Email validation
+    if (!trimmedEmail.includes('@') || trimmedEmail.length < 3) {
+      Alert.alert('Validation Error', 'Please enter a valid email address.');
+      return;
+    }
+
     const newContact: Contact = {
       id: Date.now().toString(),
       name: trimmedName,
       phone: trimmedPhone,
+      email: trimmedEmail,
     };
 
     const updated = [...contacts, newContact];
     saveContacts(updated);
+
+    // Sync to Supabase
+    if (user) {
+      const syncAddContact = async () => {
+        try {
+          const { error } = await supabase
+            .from('emergency_contacts')
+            .upsert({
+              user_id: user.id,
+              contact_name: trimmedName,
+              contact_phone: cleanPhone,
+              contact_email: trimmedEmail,
+            });
+          if (error) {
+            console.log('Error syncing contact addition to Supabase:', error.message);
+          }
+        } catch (err) {
+          console.log('Supabase sync error:', err);
+        }
+      };
+      syncAddContact();
+    }
+
     setName('');
     setPhone('');
+    setEmail('');
     Alert.alert('Success', 'Emergency contact added successfully.');
   };
 
@@ -95,8 +132,28 @@ export default function EmergencyContactsScreen() {
           text: 'Remove',
           style: 'destructive',
           onPress: () => {
+            const contactToDelete = contacts.find((c) => c.id === id);
             const updated = contacts.filter((c) => c.id !== id);
             saveContacts(updated);
+
+            // Sync deletion to Supabase
+            if (user && contactToDelete) {
+              const syncDeleteContact = async () => {
+                try {
+                  const { error } = await supabase
+                    .from('emergency_contacts')
+                    .delete()
+                    .eq('user_id', user.id)
+                    .eq('contact_email', contactToDelete.email);
+                  if (error) {
+                    console.log('Error deleting contact from Supabase:', error.message);
+                  }
+                } catch (err) {
+                  console.log('Supabase delete sync error:', err);
+                }
+              };
+              syncDeleteContact();
+            }
           },
         },
       ]
@@ -193,8 +250,13 @@ export default function EmergencyContactsScreen() {
                         {contact.name}
                       </ThemedText>
                       <ThemedText type="small" themeColor="textSecondary" style={styles.contactPhone}>
-                        {contact.phone}
+                        Phone: {contact.phone}
                       </ThemedText>
+                      {contact.email && (
+                        <ThemedText type="small" themeColor="textSecondary" style={styles.contactPhone}>
+                          Email: {contact.email}
+                        </ThemedText>
+                      )}
                     </View>
                     <Pressable
                       onPress={() => deleteContact(contact.id)}
@@ -254,6 +316,28 @@ export default function EmergencyContactsScreen() {
                   placeholder="e.g. +1 234 567 890"
                   placeholderTextColor={theme.textSecondary}
                   keyboardType="phone-pad"
+                  style={[
+                    styles.input,
+                    {
+                      borderColor: theme.backgroundSelected,
+                      color: theme.text,
+                    },
+                  ]}
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <ThemedText type="small" style={styles.inputLabel} themeColor="textSecondary">
+                  Account Email (For location verification)
+                </ThemedText>
+                <TextInput
+                  value={email}
+                  onChangeText={setEmail}
+                  placeholder="e.g. contact@safeher.ai"
+                  placeholderTextColor={theme.textSecondary}
+                  keyboardType="email-address"
                   style={[
                     styles.input,
                     {

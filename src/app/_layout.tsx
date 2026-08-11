@@ -47,6 +47,27 @@ function AuthOrApp() {
           headerShown: false,
         }}
       />
+
+      <Stack.Screen
+        name="live-location"
+        options={{
+          headerShown: false,
+        }}
+      />
+
+      <Stack.Screen
+        name="track-victim"
+        options={{
+          headerShown: false,
+        }}
+      />
+
+      <Stack.Screen
+        name="safety-timer"
+        options={{
+          headerShown: false,
+        }}
+      />
     </Stack>
   );
 }
