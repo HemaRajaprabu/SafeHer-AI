@@ -6,6 +6,7 @@ import {
     ScrollView,
     StyleSheet,
     Switch,
+    TextInput,
     View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,9 +15,33 @@ import { router } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { useVoiceSOS } from '@/hooks/voice-sos-provider';
 
 export default function SettingsScreen() {
     const [automaticSOS, setAutomaticSOS] = useState(false);
+
+    const {
+        voiceSOSEnabled,
+        voiceSOSStatus,
+        emergencyPhrase,
+        transcription,
+        setVoiceSOSEnabled,
+        setEmergencyPhrase,
+    } = useVoiceSOS();
+
+    const [customPhraseInput, setCustomPhraseInput] = useState('');
+    const PREDEFINED_PHRASES = ['help help', 'danger danger', 'emergency', 'safeher activate'];
+
+    useEffect(() => {
+        if (!PREDEFINED_PHRASES.includes(emergencyPhrase)) {
+            setCustomPhraseInput(emergencyPhrase);
+        }
+    }, [emergencyPhrase]);
+
+    const handleCustomPhraseChange = (text: string) => {
+        setCustomPhraseInput(text);
+        setEmergencyPhrase(text);
+    };
 
     useEffect(() => {
         const loadAutomaticSOS = async () => {
@@ -72,7 +97,7 @@ export default function SettingsScreen() {
                                     ios: 'chevron.left',
                                     android: 'arrow-back',
                                     web: 'arrow-left',
-                                }}
+                                } as any}
                                 size={24}
                                 tintColor="#111827"
                             />
@@ -148,6 +173,135 @@ export default function SettingsScreen() {
                                 ? 'AI can recommend automatic emergency activation when a high-risk situation is detected.'
                                 : 'You will manually activate SOS when you need emergency assistance.'}
                         </ThemedText>
+                    </View>
+
+                    {/* 🎙️ Voice SOS Trigger */}
+                    <View style={styles.section}>
+                        <ThemedText style={styles.sectionTitle}>
+                            🎙️ Voice SOS Trigger
+                        </ThemedText>
+
+                        <ThemedText style={styles.sectionDescription}>
+                            Trigger emergency assistance hands-free using your voice. All processing is done locally on your device for absolute privacy.
+                        </ThemedText>
+
+                        {/* Voice SOS Toggle */}
+                        <View style={styles.settingCard}>
+                            <View style={[styles.iconContainer, { backgroundColor: '#EC4899' }]}>
+                                <SymbolView
+                                    name={{
+                                        ios: 'mic.fill',
+                                        android: 'mic',
+                                        web: 'mic',
+                                    }}
+                                    size={26}
+                                    tintColor="#FFFFFF"
+                                />
+                            </View>
+
+                            <View style={styles.settingInfo}>
+                                <ThemedText style={styles.settingTitle}>
+                                    Voice Activation
+                                </ThemedText>
+
+                                <ThemedText style={styles.settingDescription}>
+                                    Start monitoring microphone to detect the emergency phrase.
+                                </ThemedText>
+                            </View>
+
+                            <Switch
+                                value={voiceSOSEnabled}
+                                onValueChange={setVoiceSOSEnabled}
+                            />
+                        </View>
+
+                        {/* Phrase Selector */}
+                        {voiceSOSEnabled && (
+                            <View style={styles.phraseContainer}>
+                                <ThemedText style={styles.settingTitle}>Emergency Phrase</ThemedText>
+                                <ThemedText style={styles.settingDescription}>
+                                    Select or type the phrase to trigger SOS. Say this phrase clearly in the foreground.
+                                </ThemedText>
+                                <View style={styles.phraseSelector}>
+                                    {PREDEFINED_PHRASES.map((phrase) => (
+                                        <Pressable
+                                            key={phrase}
+                                            onPress={() => setEmergencyPhrase(phrase)}
+                                            style={[
+                                                styles.phraseOption,
+                                                emergencyPhrase === phrase && styles.phraseOptionSelected
+                                            ]}
+                                        >
+                                            <ThemedText style={[
+                                                styles.phraseOptionText,
+                                                emergencyPhrase === phrase && styles.phraseOptionTextSelected
+                                            ]}>
+                                                "{phrase}"
+                                            </ThemedText>
+                                        </Pressable>
+                                    ))}
+                                    <Pressable
+                                        onPress={() => setEmergencyPhrase('')}
+                                        style={[
+                                            styles.phraseOption,
+                                            !PREDEFINED_PHRASES.includes(emergencyPhrase) && styles.phraseOptionSelected
+                                        ]}
+                                    >
+                                        <ThemedText style={[
+                                            styles.phraseOptionText,
+                                            !PREDEFINED_PHRASES.includes(emergencyPhrase) && styles.phraseOptionTextSelected
+                                        ]}>
+                                            Custom
+                                        </ThemedText>
+                                    </Pressable>
+                                </View>
+
+                                {!PREDEFINED_PHRASES.includes(emergencyPhrase) && (
+                                    <TextInput
+                                        style={styles.customInput}
+                                        value={customPhraseInput}
+                                        onChangeText={handleCustomPhraseChange}
+                                        placeholder="Type custom phrase (e.g. 'help me now')"
+                                        placeholderTextColor="#94A3B8"
+                                        autoCapitalize="none"
+                                        autoCorrect={false}
+                                    />
+                                )}
+                            </View>
+                        )}
+                    </View>
+
+                    {/* Voice SOS Status Card */}
+                    <View
+                        style={[
+                            styles.statusCard,
+                            voiceSOSEnabled
+                                ? (voiceSOSStatus === 'listening' ? styles.statusListening : styles.statusEnabled)
+                                : (voiceSOSStatus === 'permission_denied' ? styles.statusError : styles.statusDisabled),
+                        ]}
+                    >
+                        <ThemedText style={styles.statusTitle}>
+                            {voiceSOSStatus === 'listening' && '🔊 Voice SOS: Listening'}
+                            {voiceSOSStatus === 'on' && '🟢 Voice SOS: ON'}
+                            {voiceSOSStatus === 'off' && '⚪ Voice SOS: OFF'}
+                            {voiceSOSStatus === 'permission_denied' && '🔴 Microphone Permission Denied'}
+                            {voiceSOSStatus === 'error' && '🔴 Voice SOS: Error'}
+                        </ThemedText>
+
+                        <ThemedText style={styles.statusText}>
+                            {voiceSOSStatus === 'listening' && 'Microphone is actively monitoring. Try speaking the emergency phrase clearly.'}
+                            {voiceSOSStatus === 'on' && 'Monitoring is enabled but paused. It will run when the app is in the foreground.'}
+                            {voiceSOSStatus === 'off' && 'Voice SOS monitoring is OFF.'}
+                            {voiceSOSStatus === 'permission_denied' && 'Speech recognition or microphone permissions were denied. Please enable them in your device Settings.'}
+                            {voiceSOSStatus === 'error' && 'An error occurred with the local voice recognition system.'}
+                        </ThemedText>
+
+                        {voiceSOSStatus === 'listening' && transcription !== '' && (
+                            <View style={styles.transcriptionContainer}>
+                                <ThemedText style={styles.transcriptionLabel}>Live Speech Transcript:</ThemedText>
+                                <ThemedText style={styles.transcriptionText}>"{transcription}"</ThemedText>
+                            </View>
+                        )}
                     </View>
 
                     {/* How it works */}
@@ -471,5 +625,72 @@ const styles = StyleSheet.create({
         fontSize: 11,
         lineHeight: 17,
         marginTop: 25,
+    },
+    phraseContainer: {
+        marginTop: 20,
+        paddingTop: 16,
+        borderTopWidth: 1,
+        borderTopColor: '#E2E8F0',
+    },
+    phraseSelector: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+        marginTop: 10,
+    },
+    phraseOption: {
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 8,
+        backgroundColor: '#F1F5F9',
+        borderWidth: 1,
+        borderColor: '#E2E8F0',
+    },
+    phraseOptionSelected: {
+        backgroundColor: '#7C3AED',
+        borderColor: '#7C3AED',
+    },
+    phraseOptionText: {
+        fontSize: 13,
+        color: '#475569',
+    },
+    phraseOptionTextSelected: {
+        color: '#FFFFFF',
+        fontWeight: 'bold',
+    },
+    customInput: {
+        borderWidth: 1,
+        borderColor: '#CBD5E1',
+        borderRadius: 10,
+        padding: 12,
+        marginTop: 10,
+        backgroundColor: '#FFFFFF',
+        fontSize: 14,
+        color: '#1E293B',
+    },
+    statusListening: {
+        backgroundColor: '#F0FDF4',
+        borderColor: '#86EFAC',
+    },
+    statusError: {
+        backgroundColor: '#FEF2F2',
+        borderColor: '#FCA5A5',
+    },
+    transcriptionContainer: {
+        marginTop: 12,
+        paddingTop: 8,
+        borderTopWidth: 1,
+        borderTopColor: 'rgba(0,0,0,0.06)',
+    },
+    transcriptionLabel: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#64748B',
+    },
+    transcriptionText: {
+        fontSize: 14,
+        fontStyle: 'italic',
+        color: '#1E293B',
+        marginTop: 2,
     },
 });

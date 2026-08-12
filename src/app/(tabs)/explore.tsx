@@ -4,12 +4,14 @@ import { SymbolView } from 'expo-symbols';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Spacing } from '@/constants/theme';
+import { Spacing, MaxContentWidth, BottomTabInset } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { router } from 'expo-router';
 
 export default function ExploreScreen() {
   const theme = useTheme();
+  const isDark = theme.text === '#ffffff';
+  const cardBg = isDark ? '#1E293B' : '#FFFFFF';
 
   const showComingSoon = (feature: string) => {
     Alert.alert(
@@ -19,9 +21,10 @@ export default function ExploreScreen() {
   };
 
   return (
-    <ThemedView style={styles.container}>
+    <ThemedView style={[styles.container, { backgroundColor: isDark ? '#0F172A' : '#F8FAFC' }]}>
       <SafeAreaView style={styles.safeArea}>
         <ScrollView
+          style={styles.scrollView}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.content}
         >
@@ -54,7 +57,7 @@ export default function ExploreScreen() {
                   android: 'warning',
                   web: 'warning',
                 }}
-                size={42}
+                size={40}
                 tintColor="#FFFFFF"
               />
             </View>
@@ -71,7 +74,7 @@ export default function ExploreScreen() {
           </Pressable>
 
           {/* Quick Actions */}
-          <ThemedText type="subtitle" style={styles.sectionTitle}>
+          <ThemedText type="smallBold" style={styles.sectionTitle}>
             Quick Safety Actions
           </ThemedText>
 
@@ -81,32 +84,37 @@ export default function ExploreScreen() {
               onPress={() => router.push('/emergency-contacts' as any)}
               style={({ pressed }) => [
                 styles.featureCard,
-                { backgroundColor: theme.backgroundElement },
+                { 
+                  backgroundColor: isDark ? 'rgba(167, 139, 250, 0.12)' : 'rgba(124, 58, 237, 0.06)',
+                },
                 pressed && styles.pressed,
               ]}
             >
-              <View style={styles.iconCircle}>
+              <View style={[styles.iconCircle, { backgroundColor: isDark ? 'rgba(167, 139, 250, 0.2)' : 'rgba(124, 58, 237, 0.12)' }]}>
                 <SymbolView
                   name={{
                     ios: 'person.2.fill',
                     android: 'group',
                     web: 'users',
                   } as any}
-                  size={25}
-                  tintColor={theme.text}
+                  size={18}
+                  tintColor={isDark ? '#C084FC' : '#7C3AED'}
                 />
               </View>
 
-              <ThemedText type="smallBold">
-                Emergency Contacts
-              </ThemedText>
+              <View style={styles.cardContent}>
+                <ThemedText style={styles.cardTitle}>
+                  Emergency Contacts
+                </ThemedText>
 
-              <ThemedText
-                type="small"
-                themeColor="textSecondary"
-              >
-                Manage trusted contacts
-              </ThemedText>
+                <ThemedText
+                  style={styles.cardSubtitle}
+                  themeColor="textSecondary"
+                  numberOfLines={1}
+                >
+                  Manage trusted contacts
+                </ThemedText>
+              </View>
             </Pressable>
 
             {/* Location */}
@@ -114,32 +122,37 @@ export default function ExploreScreen() {
               onPress={() => router.push('/live-location' as any)}
               style={({ pressed }) => [
                 styles.featureCard,
-                { backgroundColor: theme.backgroundElement },
+                { 
+                  backgroundColor: isDark ? 'rgba(96, 165, 250, 0.12)' : 'rgba(37, 99, 235, 0.06)',
+                },
                 pressed && styles.pressed,
               ]}
             >
-              <View style={styles.iconCircle}>
+              <View style={[styles.iconCircle, { backgroundColor: isDark ? 'rgba(96, 165, 250, 0.2)' : 'rgba(37, 99, 235, 0.12)' }]}>
                 <SymbolView
                   name={{
                     ios: 'location.fill',
                     android: 'location-on',
                     web: 'location',
                   } as any}
-                  size={25}
-                  tintColor={theme.text}
+                  size={18}
+                  tintColor={isDark ? '#60A5FA' : '#2563EB'}
                 />
               </View>
 
-              <ThemedText type="smallBold">
-                Live Location
-              </ThemedText>
+              <View style={styles.cardContent}>
+                <ThemedText style={styles.cardTitle}>
+                  Live Location
+                </ThemedText>
 
-              <ThemedText
-                type="small"
-                themeColor="textSecondary"
-              >
-                Share your current location
-              </ThemedText>
+                <ThemedText
+                  style={styles.cardSubtitle}
+                  themeColor="textSecondary"
+                  numberOfLines={1}
+                >
+                  Share your location
+                </ThemedText>
+              </View>
             </Pressable>
 
             {/* Safety Timer */}
@@ -147,32 +160,37 @@ export default function ExploreScreen() {
               onPress={() => router.push('/safety-timer')}
               style={({ pressed }) => [
                 styles.featureCard,
-                { backgroundColor: theme.backgroundElement },
+                { 
+                  backgroundColor: isDark ? 'rgba(251, 191, 36, 0.12)' : 'rgba(217, 119, 6, 0.06)',
+                },
                 pressed && styles.pressed,
               ]}
             >
-              <View style={styles.iconCircle}>
+              <View style={[styles.iconCircle, { backgroundColor: isDark ? 'rgba(251, 191, 36, 0.2)' : 'rgba(217, 119, 6, 0.12)' }]}>
                 <SymbolView
                   name={{
                     ios: 'timer',
                     android: 'timer',
                     web: 'clock',
                   } as any}
-                  size={25}
-                  tintColor={theme.text}
+                  size={18}
+                  tintColor={isDark ? '#FBBF24' : '#D97706'}
                 />
               </View>
 
-              <ThemedText type="smallBold">
-                Safety Timer
-              </ThemedText>
+              <View style={styles.cardContent}>
+                <ThemedText style={styles.cardTitle}>
+                  Safety Timer
+                </ThemedText>
 
-              <ThemedText
-                type="small"
-                themeColor="textSecondary"
-              >
-                Automatic safety check
-              </ThemedText>
+                <ThemedText
+                  style={styles.cardSubtitle}
+                  themeColor="textSecondary"
+                  numberOfLines={1}
+                >
+                  Automatic safety check
+                </ThemedText>
+              </View>
             </Pressable>
 
             {/* Safe Places */}
@@ -180,32 +198,37 @@ export default function ExploreScreen() {
               onPress={() => showComingSoon('Nearby Safe Places')}
               style={({ pressed }) => [
                 styles.featureCard,
-                { backgroundColor: theme.backgroundElement },
+                { 
+                  backgroundColor: isDark ? 'rgba(52, 211, 153, 0.12)' : 'rgba(5, 150, 105, 0.06)',
+                },
                 pressed && styles.pressed,
               ]}
             >
-              <View style={styles.iconCircle}>
+              <View style={[styles.iconCircle, { backgroundColor: isDark ? 'rgba(52, 211, 153, 0.2)' : 'rgba(5, 150, 105, 0.12)' }]}>
                 <SymbolView
                   name={{
                     ios: 'map.fill',
                     android: 'map',
                     web: 'map',
                   } as any}
-                  size={25}
-                  tintColor={theme.text}
+                  size={18}
+                  tintColor={isDark ? '#34D399' : '#059669'}
                 />
               </View>
 
-              <ThemedText type="smallBold">
-                Safe Places
-              </ThemedText>
+              <View style={styles.cardContent}>
+                <ThemedText style={styles.cardTitle}>
+                  Safe Places
+                </ThemedText>
 
-              <ThemedText
-                type="small"
-                themeColor="textSecondary"
-              >
-                Find nearby safe locations
-              </ThemedText>
+                <ThemedText
+                  style={styles.cardSubtitle}
+                  themeColor="textSecondary"
+                  numberOfLines={1}
+                >
+                  Find nearby safe spots
+                </ThemedText>
+              </View>
             </Pressable>
           </View>
 
@@ -214,7 +237,16 @@ export default function ExploreScreen() {
             onPress={() => showComingSoon('SafeHer AI Assistant')}
             style={({ pressed }) => [
               styles.aiCard,
-              { backgroundColor: theme.backgroundElement },
+              { 
+                backgroundColor: isDark ? '#3B0764' : '#F3E8FF',
+                borderColor: isDark ? '#5B21B6' : '#E9D5FF',
+                borderWidth: 1,
+                shadowColor: isDark ? '#000000' : '#7C3AED',
+                shadowOpacity: isDark ? 0.15 : 0.05,
+                shadowOffset: { width: 0, height: 2 },
+                shadowRadius: 6,
+                elevation: 3,
+              },
               pressed && styles.pressed,
             ]}
           >
@@ -223,41 +255,54 @@ export default function ExploreScreen() {
             </View>
 
             <View style={styles.aiContent}>
-              <ThemedText type="subtitle">
+              <ThemedText style={styles.aiTitle}>
                 SafeHer AI Assistant
               </ThemedText>
 
               <ThemedText
-                type="small"
+                style={styles.cardSubtitle}
                 themeColor="textSecondary"
               >
                 Get safety guidance and quick assistance.
               </ThemedText>
             </View>
 
-            <ThemedText style={styles.arrow}>›</ThemedText>
+            <ThemedText style={[styles.arrow, { color: isDark ? '#C084FC' : '#7C3AED' }]}>›</ThemedText>
           </Pressable>
 
           {/* Safety Status */}
-          <ThemedView
-            type="backgroundElement"
-            style={styles.statusCard}
+          <View
+            style={[
+              styles.statusCard,
+              {
+                backgroundColor: cardBg,
+                borderColor: isDark ? '#334155' : '#E2E8F0',
+                borderWidth: 1,
+                borderLeftWidth: 4,
+                borderLeftColor: '#10B981',
+                shadowColor: '#000000',
+                shadowOpacity: isDark ? 0.1 : 0.02,
+                shadowOffset: { width: 0, height: 1 },
+                shadowRadius: 2,
+                elevation: 1,
+              }
+            ]}
           >
             <View style={styles.statusDot} />
 
             <View style={styles.statusContent}>
-              <ThemedText type="smallBold">
+              <ThemedText style={styles.cardTitle}>
                 Safety Status
               </ThemedText>
 
               <ThemedText
-                type="small"
+                style={styles.cardSubtitle}
                 themeColor="textSecondary"
               >
                 You are currently in normal safety mode.
               </ThemedText>
             </View>
-          </ThemedView>
+          </View>
 
           {/* Info */}
           <ThemedText
@@ -281,22 +326,31 @@ const styles = StyleSheet.create({
 
   safeArea: {
     flex: 1,
+    maxWidth: MaxContentWidth,
+    width: '100%',
+    alignSelf: 'center',
+  },
+
+  scrollView: {
+    flex: 1,
+    width: '100%',
   },
 
   content: {
     paddingHorizontal: Spacing.four,
     paddingTop: Spacing.three,
-    paddingBottom: Spacing.five,
-    gap: Spacing.three,
+    paddingBottom: BottomTabInset + Spacing.five,
+    gap: 16,
   },
 
   header: {
-    paddingVertical: Spacing.two,
+    paddingTop: 24,
+    paddingBottom: Spacing.two,
     gap: Spacing.one,
   },
 
   title: {
-    fontWeight: '700',
+    fontWeight: '800',
   },
 
   subtitle: {
@@ -304,26 +358,30 @@ const styles = StyleSheet.create({
   },
 
   sectionTitle: {
-    marginTop: Spacing.two,
-    fontWeight: '600',
+    fontWeight: '800',
   },
 
   sosCard: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: Spacing.four,
-    borderRadius: 18,
+    borderRadius: 20,
     backgroundColor: '#DC2626',
     gap: Spacing.three,
+    shadowColor: '#DC2626',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
 
   sosIcon: {
-    width: 62,
-    height: 62,
-    borderRadius: 31,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: 'rgba(255,255,255,0.2)',
   },
 
   sosContent: {
@@ -333,8 +391,9 @@ const styles = StyleSheet.create({
 
   sosTitle: {
     color: '#FFFFFF',
-    fontSize: 19,
-    fontWeight: '800',
+    fontSize: 20,
+    fontWeight: '900',
+    letterSpacing: 0.5,
   },
 
   sosSubtitle: {
@@ -346,38 +405,57 @@ const styles = StyleSheet.create({
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: Spacing.three,
+    justifyContent: 'space-between',
+    gap: 10,
   },
 
   featureCard: {
-    width: '47%',
-    minHeight: 145,
-    padding: Spacing.three,
-    borderRadius: 16,
-    gap: Spacing.two,
+    width: '48%',
+    height: 90,
+    padding: 10,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
   },
 
   iconCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(128,128,128,0.12)',
+  },
+
+  cardContent: {
+    alignItems: 'center',
+    gap: 1,
+  },
+
+  cardTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+
+  cardSubtitle: {
+    fontSize: 10,
+    lineHeight: 12,
+    textAlign: 'center',
   },
 
   aiCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: Spacing.three,
-    borderRadius: 16,
-    gap: Spacing.three,
+    padding: 16,
+    borderRadius: 20,
+    gap: 14,
   },
 
   aiIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#7C3AED',
@@ -385,47 +463,55 @@ const styles = StyleSheet.create({
 
   aiIconText: {
     color: '#FFFFFF',
-    fontWeight: '800',
+    fontWeight: '900',
     fontSize: 16,
+  },
+
+  aiTitle: {
+    fontSize: 16,
+    fontWeight: '800',
   },
 
   aiContent: {
     flex: 1,
-    gap: Spacing.one,
+    gap: 4,
   },
 
   arrow: {
-    fontSize: 30,
+    fontSize: 24,
+    fontWeight: '600',
     opacity: 0.6,
   },
 
   statusCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: Spacing.three,
+    padding: 16,
     borderRadius: 16,
-    gap: Spacing.two,
+    gap: 12,
   },
 
   statusDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
     backgroundColor: '#10B981',
   },
 
   statusContent: {
     flex: 1,
-    gap: Spacing.one,
+    gap: 4,
   },
 
   footerText: {
     textAlign: 'center',
-    lineHeight: 20,
+    lineHeight: 18,
+    fontSize: 11,
     marginTop: Spacing.two,
   },
 
   pressed: {
-    opacity: 0.75,
+    transform: [{ scale: 0.98 }],
+    opacity: 0.9,
   },
 });

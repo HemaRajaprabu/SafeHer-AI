@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
     Alert,
@@ -11,10 +11,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Audio } from 'expo-av';
 
 import { useLocation } from '@/hooks/use-location';
+import { useVoiceSOS } from '@/hooks/voice-sos-provider';
 import { useAuth } from '@/hooks/use-auth';
 import { supabase } from '@/utils/supabase';
 
@@ -32,6 +33,9 @@ export default function SOSScreen() {
     const [isCounting, setIsCounting] = useState(false);
     const [isActivated, setIsActivated] = useState(false);
     const [contacts, setContacts] = useState<Contact[]>([]);
+
+    const params = useLocalSearchParams();
+    const { setVoiceSOSEnabled } = useVoiceSOS();
 
     const { user } = useAuth();
     const {
@@ -230,11 +234,11 @@ export default function SOSScreen() {
         return () => clearTimeout(timer);
     }, [isCounting, countdown]);
 
-    const startSOS = () => {
+    const startSOS = useCallback(() => {
         setCountdown(5);
         setIsCounting(true);
         setIsActivated(false);
-    };
+    }, []);
 
     const cancelSOS = () => {
         setIsCounting(false);
@@ -246,6 +250,23 @@ export default function SOSScreen() {
         setIsCounting(false);
         setCountdown(5);
     };
+
+    // Auto-start SOS if redirected via Voice Trigger
+    useEffect(() => {
+        if (params.autoStart === 'true') {
+            const timer = setTimeout(() => {
+                startSOS();
+            }, 0);
+            return () => clearTimeout(timer);
+        }
+    }, [params.autoStart, startSOS]);
+
+    // Disable Voice SOS monitoring when SOS starts or becomes active
+    useEffect(() => {
+        if (isCounting || isActivated) {
+            setVoiceSOSEnabled(false);
+        }
+    }, [isCounting, isActivated, setVoiceSOSEnabled]);
 
     const callEmergency = async () => {
         const phoneNumber = '112';
