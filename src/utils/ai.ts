@@ -89,7 +89,7 @@ export async function getAIResponse(
 
   // Real Gemini API Integration
   try {
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
 
     // Format chat history for Gemini API
     const contents = chatHistory.map(msg => ({
@@ -103,7 +103,7 @@ export async function getAIResponse(
       parts: [{ text: userInput }]
     });
 
-    const locationText = locationContext 
+    const locationText = locationContext
       ? `User's current coordinates: Latitude ${locationContext.latitude}, Longitude ${locationContext.longitude}.`
       : "User's current coordinates are not available.";
 
@@ -139,7 +139,6 @@ Schema:
         },
         generationConfig: {
           responseMimeType: "application/json",
-          temperature: 0.2,
         }
       })
     });
@@ -150,7 +149,7 @@ Schema:
 
     const data = await response.json();
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    
+
     if (!text) {
       throw new Error('Empty response from Gemini');
     }
@@ -162,7 +161,7 @@ Schema:
     };
   } catch (error) {
     console.error('Error fetching from Gemini API:', error);
-    
+
     // Attempt local fallback if API fails
     const lowerInput = userInput.toLowerCase();
     for (const rule of LOCAL_RULES) {

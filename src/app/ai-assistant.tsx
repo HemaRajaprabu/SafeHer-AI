@@ -1,4 +1,7 @@
-import { useState, useRef, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { router } from 'expo-router';
+import { SymbolView } from 'expo-symbols';
+import { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -10,15 +13,12 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { SymbolView } from 'expo-symbols';
-import { router } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { useTheme } from '@/hooks/use-theme';
 import { useLocation } from '@/hooks/use-location';
-import { getAIResponse, ChatMessage, AIResponse } from '@/utils/ai';
+import { useTheme } from '@/hooks/use-theme';
+import { AIResponse, ChatMessage, getAIResponse } from '@/utils/ai';
 
 interface UIHistoryMessage {
   id: string;
@@ -243,10 +243,10 @@ export default function AIAssistantScreen() {
                       ? [styles.bubbleUser, { backgroundColor: '#7C3AED' }]
                       : [styles.bubbleModel, { backgroundColor: isDark ? '#1E293B' : '#FFFFFF' }],
                     !isUser &&
-                      !isUser && {
-                        borderColor: isDark ? '#334155' : '#E2E8F0',
-                        borderWidth: 1,
-                      },
+                    !isUser && {
+                      borderColor: isDark ? '#334155' : '#E2E8F0',
+                      borderWidth: 1,
+                    },
                   ]}
                 >
                   <ThemedText style={[styles.messageText, isUser && styles.messageTextUser]}>
@@ -268,8 +268,8 @@ export default function AIAssistantScreen() {
                                 riskLvl === 'high'
                                   ? 'rgba(220, 38, 38, 0.1)'
                                   : riskLvl === 'medium'
-                                  ? 'rgba(217, 119, 6, 0.1)'
-                                  : 'rgba(5, 150, 105, 0.1)',
+                                    ? 'rgba(217, 119, 6, 0.1)'
+                                    : 'rgba(5, 150, 105, 0.1)',
                             },
                           ]}
                         >
@@ -281,8 +281,8 @@ export default function AIAssistantScreen() {
                                   riskLvl === 'high'
                                     ? '#EF4444'
                                     : riskLvl === 'medium'
-                                    ? '#F59E0B'
-                                    : '#10B981',
+                                      ? '#F59E0B'
+                                      : '#10B981',
                               },
                             ]}
                           >
@@ -353,6 +353,9 @@ export default function AIAssistantScreen() {
         >
           <View style={[styles.inputRow, { borderTopColor: isDark ? '#334155' : '#E2E8F0' }]}>
             <TextInput
+              editable={true}
+              pointerEvents="auto"
+              autoFocus={true}
               style={[
                 styles.textInput,
                 {
