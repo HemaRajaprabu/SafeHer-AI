@@ -1,3 +1,6 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { router } from 'expo-router';
+import { SymbolView } from 'expo-symbols';
 import { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
@@ -10,14 +13,11 @@ import {
     View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { SymbolView } from 'expo-symbols';
-import { router } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { useTheme } from '@/hooks/use-theme';
 import { useLocation } from '@/hooks/use-location';
+import { useTheme } from '@/hooks/use-theme';
 
 export default function LiveLocationScreen() {
     const theme = useTheme();
@@ -178,13 +178,13 @@ export default function LiveLocationScreen() {
                             </View>
                         ) : location ? (
                             <View style={styles.locationContainer}>
-                                 <View style={styles.badgeRow}>
-                                     <View style={isTracking || isBackgroundTracking ? styles.gpsActiveBadge : styles.gpsStoppedBadge}>
-                                         <View style={isTracking || isBackgroundTracking ? styles.gpsPulseDot : styles.gpsStoppedDot} />
-                                         <ThemedText style={isTracking || isBackgroundTracking ? styles.gpsActiveText : styles.gpsStoppedText}>
-                                             {isBackgroundTracking ? '🟢 Background Tracking Active' : isTracking ? '🟢 Live Tracking Active' : '⚪ Live Tracking Stopped'}
-                                         </ThemedText>
-                                     </View>
+                                <View style={styles.badgeRow}>
+                                    <View style={isTracking || isBackgroundTracking ? styles.gpsActiveBadge : styles.gpsStoppedBadge}>
+                                        <View style={isTracking || isBackgroundTracking ? styles.gpsPulseDot : styles.gpsStoppedDot} />
+                                        <ThemedText style={isTracking || isBackgroundTracking ? styles.gpsActiveText : styles.gpsStoppedText}>
+                                            {isBackgroundTracking ? '🟢 Background Tracking Active' : isTracking ? '🟢 Live Tracking Active' : '⚪ Live Tracking Stopped'}
+                                        </ThemedText>
+                                    </View>
                                     <ThemedText style={styles.timestampText} themeColor="textSecondary">
                                         Updated: {formatTimestamp(location.timestamp)}
                                     </ThemedText>

@@ -1,17 +1,78 @@
 import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
+import { useState, useCallback } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing, MaxContentWidth, BottomTabInset } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 
 export default function ExploreScreen() {
   const theme = useTheme();
   const isDark = theme.text === '#ffffff';
   const cardBg = isDark ? '#1E293B' : '#FFFFFF';
+
+  const [safetyState, setSafetyState] = useState<{
+    status: 'safe' | 'low' | 'medium' | 'high' | 'emergency';
+    message: string;
+    color: string;
+  }>({
+    status: 'safe',
+    message: 'You are currently in normal safety mode.',
+    color: '#10B981',
+  });
+
+  useFocusEffect(
+    useCallback(() => {
+      const loadSafetyState = async () => {
+        try {
+          const isSOSActive = await AsyncStorage.getItem('isSOSActive');
+          if (isSOSActive === 'true') {
+            setSafetyState({
+              status: 'emergency',
+              message: 'Emergency mode is active.',
+              color: '#DC2626',
+            });
+            return;
+          }
+
+          const level = await AsyncStorage.getItem('currentRiskLevel');
+          if (level === 'high') {
+            setSafetyState({
+              status: 'high',
+              message: 'High risk detected. Consider activating SOS.',
+              color: '#EF4444',
+            });
+          } else if (level === 'medium') {
+            setSafetyState({
+              status: 'medium',
+              message: 'Increased risk detected. Stay alert.',
+              color: '#F59E0B',
+            });
+          } else if (level === 'low') {
+            setSafetyState({
+              status: 'low',
+              message: 'Low risk detected. Stay aware of your surroundings.',
+              color: '#10B981',
+            });
+          } else {
+            setSafetyState({
+              status: 'safe',
+              message: 'You are currently in normal safety mode.',
+              color: '#10B981',
+            });
+          }
+        } catch (e) {
+          console.log('Error reading safety state:', e);
+        }
+      };
+
+      loadSafetyState();
+    }, [])
+  );
 
   const showComingSoon = (feature: string) => {
     Alert.alert(
@@ -195,7 +256,7 @@ export default function ExploreScreen() {
 
             {/* Safe Places */}
             <Pressable
-              onPress={() => showComingSoon('Nearby Safe Places')}
+              onPress={() => router.push('/safe-places')}
               style={({ pressed }) => [
                 styles.featureCard,
                 { 
@@ -234,7 +295,7 @@ export default function ExploreScreen() {
 
           {/* AI Assistant */}
           <Pressable
-            onPress={() => showComingSoon('SafeHer AI Assistant')}
+            onPress={() => router.push('/ai-assistant')}
             style={({ pressed }) => [
               styles.aiCard,
               { 
@@ -279,7 +340,7 @@ export default function ExploreScreen() {
                 borderColor: isDark ? '#334155' : '#E2E8F0',
                 borderWidth: 1,
                 borderLeftWidth: 4,
-                borderLeftColor: '#10B981',
+                borderLeftColor: safetyState.color,
                 shadowColor: '#000000',
                 shadowOpacity: isDark ? 0.1 : 0.02,
                 shadowOffset: { width: 0, height: 1 },
@@ -288,7 +349,7 @@ export default function ExploreScreen() {
               }
             ]}
           >
-            <View style={styles.statusDot} />
+            <View style={[styles.statusDot, { backgroundColor: safetyState.color }]} />
 
             <View style={styles.statusContent}>
               <ThemedText style={styles.cardTitle}>
@@ -299,7 +360,7 @@ export default function ExploreScreen() {
                 style={styles.cardSubtitle}
                 themeColor="textSecondary"
               >
-                You are currently in normal safety mode.
+                {safetyState.message}
               </ThemedText>
             </View>
           </View>

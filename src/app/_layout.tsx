@@ -69,6 +69,20 @@ function AuthOrApp() {
           headerShown: false,
         }}
       />
+
+      <Stack.Screen
+        name="safe-places"
+        options={{
+          headerShown: false,
+        }}
+      />
+
+      <Stack.Screen
+        name="ai-assistant"
+        options={{
+          headerShown: false,
+        }}
+      />
     </Stack>
   );
 }

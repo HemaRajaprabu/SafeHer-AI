@@ -87,7 +87,7 @@ export default function SafetyAnalysisScreen() {
         loadAutomaticSOS();
     }, []);
 
-    const analyzeRisk = () => {
+    const analyzeRisk = async () => {
         if (!selectedSituation) {
             Alert.alert(
                 'Select a situation',
@@ -100,12 +100,19 @@ export default function SafetyAnalysisScreen() {
 
         setRiskScore(score);
 
+        let level: RiskLevel = 'low';
         if (score >= 70) {
-            setRiskLevel('high');
+            level = 'high';
         } else if (score >= 40) {
-            setRiskLevel('medium');
-        } else {
-            setRiskLevel('low');
+            level = 'medium';
+        }
+        setRiskLevel(level);
+
+        try {
+            await AsyncStorage.setItem('currentRiskLevel', level);
+            await AsyncStorage.setItem('currentRiskScore', score.toString());
+        } catch (error) {
+            console.log('Error saving safety state to AsyncStorage:', error);
         }
     };
 
@@ -185,7 +192,7 @@ export default function SafetyAnalysisScreen() {
                                     ios: 'chevron.left',
                                     android: 'arrow-back',
                                     web: 'arrow-left',
-                                }}
+                                } as any}
                                 size={24}
                                 tintColor="#111827"
                             />
@@ -229,10 +236,16 @@ export default function SafetyAnalysisScreen() {
                             return (
                                 <Pressable
                                     key={situation.id}
-                                    onPress={() => {
+                                    onPress={async () => {
                                         setSelectedSituation(situation);
                                         setRiskScore(null);
                                         setRiskLevel(null);
+                                        try {
+                                            await AsyncStorage.removeItem('currentRiskLevel');
+                                            await AsyncStorage.removeItem('currentRiskScore');
+                                        } catch (error) {
+                                            console.log('Error resetting safety state in AsyncStorage:', error);
+                                        }
                                     }}
                                     style={({ pressed }) => [
                                         styles.situationCard,
