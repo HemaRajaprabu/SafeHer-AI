@@ -19,6 +19,7 @@ import { useVoiceSOS } from '@/hooks/voice-sos-provider';
 
 export default function SettingsScreen() {
     const [automaticSOS, setAutomaticSOS] = useState(false);
+    const [autoLocationMonitoring, setAutoLocationMonitoring] = useState(false);
 
     const {
         voiceSOSEnabled,
@@ -56,8 +57,41 @@ export default function SettingsScreen() {
             }
         };
 
+        const loadAutoLocationMonitoring = async () => {
+            try {
+                const savedValue = await AsyncStorage.getItem('autoLocationMonitoring');
+
+                if (savedValue !== null) {
+                    setAutoLocationMonitoring(savedValue === 'true');
+                }
+            } catch (error) {
+                console.log('Error loading Auto Location Monitoring setting:', error);
+            }
+        };
+
         loadAutomaticSOS();
+        loadAutoLocationMonitoring();
     }, []);
+
+    const toggleAutoLocationMonitoring = async (value: boolean) => {
+        try {
+            setAutoLocationMonitoring(value);
+
+            await AsyncStorage.setItem(
+                'autoLocationMonitoring',
+                value.toString()
+            );
+
+            if (value) {
+                Alert.alert(
+                    '📍 Location Monitoring Enabled',
+                    'SafeHer AI will automatically monitor safety profiles as your coordinates change.'
+                );
+            }
+        } catch (error) {
+            console.log('Error saving Auto Location Monitoring setting:', error);
+        }
+    };
 
     const toggleAutomaticSOS = async (value: boolean) => {
         try {
@@ -149,6 +183,36 @@ export default function SettingsScreen() {
                             <Switch
                                 value={automaticSOS}
                                 onValueChange={toggleAutomaticSOS}
+                            />
+                        </View>
+
+                        {/* Automatic Location Monitoring Toggle */}
+                        <View style={[styles.settingCard, { marginTop: 12 }]}>
+                            <View style={[styles.iconContainer, { backgroundColor: '#7C3AED' }]}>
+                                <SymbolView
+                                    name={{
+                                        ios: 'location.fill',
+                                        android: 'location-on',
+                                        web: 'map-marker',
+                                    } as any}
+                                    size={26}
+                                    tintColor="#FFFFFF"
+                                />
+                            </View>
+
+                            <View style={styles.settingInfo}>
+                                <ThemedText style={styles.settingTitle}>
+                                    Automatic Location Monitoring
+                                </ThemedText>
+
+                                <ThemedText style={styles.settingDescription}>
+                                    Monitor safety profiles in real-time as your GPS coordinates change.
+                                </ThemedText>
+                            </View>
+
+                            <Switch
+                                value={autoLocationMonitoring}
+                                onValueChange={toggleAutoLocationMonitoring}
                             />
                         </View>
                     </View>

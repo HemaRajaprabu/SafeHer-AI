@@ -12,6 +12,7 @@ import { WebBadge } from '@/components/web-badge';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/hooks/use-auth';
+import LocationSafetyCard from '@/components/LocationSafetyCard';
 
 
 
@@ -122,6 +123,10 @@ export default function HomeScreen() {
               </Pressable>
             </ThemedView>
           )}
+
+          {/* Real-Time Location Safety Monitor Card */}
+          <LocationSafetyCard />
+
           {/* AI Risk Analysis */}
           <Pressable
             onPress={() => router.push('/safety-analysis')}

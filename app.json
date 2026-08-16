@@ -60,7 +60,8 @@
           "microphonePermission": "Allow SafeHer AI to access the microphone for Voice SOS monitoring.",
           "speechRecognitionPermission": "Allow SafeHer AI to recognize your emergency voice triggers."
         }
-      ]
+      ],
+      "expo-image"
     ],
     "experiments": {
       "typedRoutes": true,

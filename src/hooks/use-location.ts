@@ -65,16 +65,57 @@ TaskManager.defineTask(LOCATION_BACKGROUND_TASK, async ({ data, error }) => {
     }
 });
 
+// --- Shared Global Location State for Multi-Subscriber Watcher ---
+let sharedSubscription: Location.LocationSubscription | null = null;
+let sharedLocation: LocationData | null = null;
+let sharedError: string | null = null;
+let sharedErrorType: LocationErrorType = null;
+let activeTrackersCount = 0;
+
+interface SharedState {
+    location: LocationData | null;
+    loading: boolean;
+    error: string | null;
+    errorType: LocationErrorType;
+}
+
+const sharedCallbacks = new Set<(loc: LocationData) => void>();
+const sharedStateSetters = new Set<(state: SharedState) => void>();
+
+function updateSharedState(state: Partial<SharedState>) {
+    if (state.location !== undefined) sharedLocation = state.location;
+    if (state.error !== undefined) sharedError = state.error;
+    if (state.errorType !== undefined) sharedErrorType = state.errorType;
+
+    const fullState: SharedState = {
+        location: sharedLocation,
+        loading: !sharedLocation && sharedSubscription === null && sharedError === null,
+        error: sharedError,
+        errorType: sharedErrorType,
+    };
+
+    sharedStateSetters.forEach(setter => {
+        try {
+            setter(fullState);
+        } catch (e) {
+            console.error('Error updating subscriber state setter:', e);
+        }
+    });
+}
+
 export function useLocation() {
-    const [location, setLocation] = useState<LocationData | null>(null);
-    const [loading, setLoading] = useState<boolean>(true);
-    const [error, setError] = useState<string | null>(null);
-    const [errorType, setErrorType] = useState<LocationErrorType>(null);
+    const [location, setLocation] = useState<LocationData | null>(sharedLocation);
+    const [loading, setLoading] = useState<boolean>(!sharedLocation && sharedSubscription === null && sharedError === null);
+    const [error, setError] = useState<string | null>(sharedError);
+    const [errorType, setErrorType] = useState<LocationErrorType>(sharedErrorType);
     
     // Tracking state
-    const [isTracking, setIsTracking] = useState<boolean>(false);
+    const [isTracking, setIsTracking] = useState<boolean>(sharedSubscription !== null);
     const [isBackgroundTracking, setIsBackgroundTracking] = useState<boolean>(false);
-    const subscriptionRef = useRef<Location.LocationSubscription | null>(null);
+    
+    // Local tracking request flags
+    const hasRequestedTrackingRef = useRef<boolean>(false);
+    const currentCallbackRef = useRef<((loc: LocationData) => void) | null>(null);
 
     const fetchLocation = useCallback(async () => {
         setLoading(true);
@@ -116,6 +157,7 @@ export function useLocation() {
                     timestamp: pos.timestamp,
                     googleMapsLink: `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`,
                 };
+                sharedLocation = data;
                 setLocation(data);
                 setLoading(false);
                 return data;
@@ -137,6 +179,7 @@ export function useLocation() {
                         timestamp: lastKnown.timestamp,
                         googleMapsLink: `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`,
                     };
+                    sharedLocation = data;
                     setLocation(data);
                     setLoading(false);
                     return data;
@@ -153,39 +196,70 @@ export function useLocation() {
     }, []);
 
     const startTracking = useCallback(async (onLocationUpdate?: (loc: LocationData) => void) => {
-        // Clean up any existing subscription first to prevent duplicates
-        if (subscriptionRef.current) {
-            subscriptionRef.current.remove();
-            subscriptionRef.current = null;
+        // Unregister any previous callback from this specific hook instance first
+        if (currentCallbackRef.current) {
+            sharedCallbacks.delete(currentCallbackRef.current);
+            currentCallbackRef.current = null;
         }
 
-        setError(null);
-        setErrorType(null);
+        // Register new callback
+        if (onLocationUpdate) {
+            currentCallbackRef.current = onLocationUpdate;
+            sharedCallbacks.add(onLocationUpdate);
+        }
+
         setIsTracking(true);
 
+        // If this hook instance hasn't recorded its active tracking request yet, increment counter
+        if (!hasRequestedTrackingRef.current) {
+            hasRequestedTrackingRef.current = true;
+            activeTrackersCount++;
+        }
+
+        // If a shared subscription is already active, we just return the cached coordinates to the new callback
+        if (sharedSubscription) {
+            if (sharedLocation) {
+                setLocation(sharedLocation);
+                if (onLocationUpdate) {
+                    onLocationUpdate(sharedLocation);
+                }
+            }
+            return;
+        }
+
+        // Otherwise, start the global subscription
+        sharedError = null;
+        sharedErrorType = null;
+        updateSharedState({ location: sharedLocation, error: null, errorType: null });
+
         try {
-            // Check if services are enabled (Mobile only)
             if (Platform.OS !== 'web') {
                 const servicesEnabled = await Location.hasServicesEnabledAsync();
                 if (!servicesEnabled) {
-                    setError('Location services are disabled. Please enable GPS.');
-                    setErrorType('services_disabled');
+                    const errMsg = 'Location services are disabled. Please enable GPS.';
+                    sharedError = errMsg;
+                    sharedErrorType = 'services_disabled';
                     setIsTracking(false);
+                    hasRequestedTrackingRef.current = false;
+                    activeTrackersCount = Math.max(0, activeTrackersCount - 1);
+                    updateSharedState({ location: null, error: errMsg, errorType: 'services_disabled' });
                     return;
                 }
             }
 
-            // Check permissions
             const { status } = await Location.requestForegroundPermissionsAsync();
             if (status !== 'granted') {
-                setError('Location permission denied. Please allow location access in settings.');
-                setErrorType('permission_denied');
+                const errMsg = 'Location permission denied. Please allow location access in settings.';
+                sharedError = errMsg;
+                sharedErrorType = 'permission_denied';
                 setIsTracking(false);
+                hasRequestedTrackingRef.current = false;
+                activeTrackersCount = Math.max(0, activeTrackersCount - 1);
+                updateSharedState({ location: null, error: errMsg, errorType: 'permission_denied' });
                 return;
             }
 
-            // Start subscription
-            const sub = await Location.watchPositionAsync(
+            sharedSubscription = await Location.watchPositionAsync(
                 {
                     accuracy: Location.Accuracy.Balanced,
                     timeInterval: 10000, // Update every 10 seconds to save battery
@@ -201,29 +275,52 @@ export function useLocation() {
                             timestamp: pos.timestamp,
                             googleMapsLink: `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`,
                         };
-                        setLocation(data);
-                        if (onLocationUpdate) {
-                            onLocationUpdate(data);
-                        }
+                        sharedLocation = data;
+                        updateSharedState({ location: data, error: null, errorType: null });
+                        
+                        // Fire all callbacks
+                        sharedCallbacks.forEach(cb => {
+                            try {
+                                cb(data);
+                            } catch (e) {
+                                console.error('Error in shared location callback:', e);
+                            }
+                        });
                     }
                 }
             );
-
-            subscriptionRef.current = sub;
         } catch (err: any) {
             console.log('Error starting tracking:', err);
-            setError('Unable to start continuous location tracking.');
-            setErrorType('unavailable');
+            const errMsg = 'Unable to start continuous location tracking.';
+            sharedError = errMsg;
+            sharedErrorType = 'unavailable';
             setIsTracking(false);
+            hasRequestedTrackingRef.current = false;
+            activeTrackersCount = Math.max(0, activeTrackersCount - 1);
+            updateSharedState({ location: null, error: errMsg, errorType: 'unavailable' });
         }
     }, []);
 
     const stopTracking = useCallback(() => {
-        if (subscriptionRef.current) {
-            subscriptionRef.current.remove();
-            subscriptionRef.current = null;
-        }
         setIsTracking(false);
+
+        // Remove our callback
+        if (currentCallbackRef.current) {
+            sharedCallbacks.delete(currentCallbackRef.current);
+            currentCallbackRef.current = null;
+        }
+
+        // Decrement active trackers count
+        if (hasRequestedTrackingRef.current) {
+            hasRequestedTrackingRef.current = false;
+            activeTrackersCount = Math.max(0, activeTrackersCount - 1);
+
+            // Clean up native subscription if no active trackers remain
+            if (activeTrackersCount === 0 && sharedSubscription) {
+                sharedSubscription.remove();
+                sharedSubscription = null;
+            }
+        }
     }, []);
 
     // Background Tracking Management
@@ -292,13 +389,37 @@ export function useLocation() {
     }, []);
 
     useEffect(() => {
-        fetchLocation();
-        
-        // Cleanup foreground subscription on unmount
+        const stateSetter = (state: SharedState) => {
+            setLocation(state.location);
+            setLoading(state.loading);
+            setError(state.error);
+            setErrorType(state.errorType);
+            setIsTracking(sharedSubscription !== null);
+        };
+
+        sharedStateSetters.add(stateSetter);
+
+        if (!sharedLocation) {
+            fetchLocation();
+        }
+
         return () => {
-            if (subscriptionRef.current) {
-                subscriptionRef.current.remove();
-                subscriptionRef.current = null;
+            sharedStateSetters.delete(stateSetter);
+            
+            // Clean up foreground callback if this instance had one
+            if (currentCallbackRef.current) {
+                sharedCallbacks.delete(currentCallbackRef.current);
+                currentCallbackRef.current = null;
+            }
+
+            // Decrement tracker count if this hook was tracking
+            if (hasRequestedTrackingRef.current) {
+                hasRequestedTrackingRef.current = false;
+                activeTrackersCount = Math.max(0, activeTrackersCount - 1);
+                if (activeTrackersCount === 0 && sharedSubscription) {
+                    sharedSubscription.remove();
+                    sharedSubscription = null;
+                }
             }
         };
     }, [fetchLocation]);
