@@ -43,12 +43,16 @@ export default function SafetyTimerScreen() {
     useEffect(() => {
         if (isActive && secondsLeft > 0) {
             intervalRef.current = setInterval(() => {
-                setSecondsLeft((prev) => prev - 1);
+                setSecondsLeft((prev) => {
+                    if (prev <= 1) {
+                        setIsActive(false);
+                        Alert.alert('🚨 Timer Expired', 'Safety timer expired! Triggering Emergency SOS...');
+                        router.push('/sos');
+                        return 0;
+                    }
+                    return prev - 1;
+                });
             }, 1000);
-        } else if (secondsLeft === 0 && isActive) {
-            stopTimer();
-            Alert.alert('🚨 Timer Expired', 'Safety timer expired! Triggering Emergency SOS...');
-            router.push('/sos');
         }
 
         return () => {
@@ -71,13 +75,16 @@ export default function SafetyTimerScreen() {
                 <View style={styles.header}>
                     <Pressable
                         onPress={() => router.back()}
-                        style={[styles.backButton, { backgroundColor: theme.backgroundElement }]}
+                        style={({ pressed }) => [
+                            styles.backButton,
+                            pressed && styles.pressed,
+                        ]}
                     >
                         <SymbolView
                             name={{
-                                ios: 'chevron.left',
-                                android: 'arrow-back',
-                                web: 'arrow-left',
+                                ios: 'timer',
+                                android: 'timer',
+                                web: 'timer',
                             } as any}
                             size={24}
                             tintColor={theme.text}
@@ -93,17 +100,15 @@ export default function SafetyTimerScreen() {
 
                 <View style={styles.content}>
                     <View style={styles.iconContainer}>
-                        <View style={[styles.timerIconCircle, { backgroundColor: isActive ? '#EF4444' : theme.backgroundSelected }]}>
-                            <SymbolView
-                                name={{
-                                    ios: 'timer',
-                                    android: 'timer',
-                                    web: 'clock',
-                                } as any}
-                                size={50}
-                                tintColor={isActive ? '#FFFFFF' : theme.text}
-                            />
-                        </View>
+                        <SymbolView
+                            name={{
+                                ios: 'timer',
+                                android: 'timer',
+                                web: 'timer',
+                            } as any}
+                            size={48}
+                            tintColor={isActive ? '#EF4444' : theme.text}
+                        />
                     </View>
 
                     {isActive ? (
@@ -196,7 +201,7 @@ const styles = StyleSheet.create({
     backButton: {
         width: 44,
         height: 44,
-        borderRadius: 22,
+        backgroundColor: 'transparent',
         alignItems: 'center',
         justifyContent: 'center',
     },
@@ -214,19 +219,10 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     iconContainer: {
-        marginBottom: 32,
-    },
-    timerIconCircle: {
-        width: 100,
-        height: 100,
-        borderRadius: 50,
         alignItems: 'center',
         justifyContent: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
-        elevation: 4,
+        marginTop: 12,
+        marginBottom: 28,
     },
     setupContainer: {
         width: '100%',

@@ -171,13 +171,16 @@ export default function EmergencyContactsScreen() {
           <View style={styles.header}>
             <Pressable
               onPress={() => router.back()}
-              style={[styles.backButton, { backgroundColor: theme.backgroundElement }]}
+              style={({ pressed }) => [
+                styles.backButton,
+                pressed && styles.pressed,
+              ]}
             >
               <SymbolView
                 name={{
-                  ios: 'chevron.left',
-                  android: 'arrow-back',
-                  web: 'arrow-left',
+                  ios: 'person.2.fill',
+                  android: 'group',
+                  web: 'group',
                 } as any}
                 size={24}
                 tintColor={theme.text}
@@ -217,8 +220,8 @@ export default function EmergencyContactsScreen() {
                   <SymbolView
                     name={{
                       ios: 'person.crop.circle.badge.plus',
-                      android: 'person-add',
-                      web: 'user-plus',
+                      android: 'person_add',
+                      web: 'person_add',
                     } as any}
                     size={36}
                     tintColor={theme.textSecondary}
@@ -229,9 +232,8 @@ export default function EmergencyContactsScreen() {
                 </ThemedView>
               ) : (
                 contacts.map((contact) => (
-                  <ThemedView
+                  <View
                     key={contact.id}
-                    type="backgroundElement"
                     style={styles.contactCard}
                   >
                     <View style={styles.contactIcon}>
@@ -239,7 +241,7 @@ export default function EmergencyContactsScreen() {
                         name={{
                           ios: 'person.fill',
                           android: 'person',
-                          web: 'user',
+                          web: 'person',
                         } as any}
                         size={22}
                         tintColor={theme.text}
@@ -269,22 +271,33 @@ export default function EmergencyContactsScreen() {
                         name={{
                           ios: 'trash.fill',
                           android: 'delete',
-                          web: 'trash',
+                          web: 'delete',
                         } as any}
                         size={20}
                         tintColor="#EF4444"
                       />
                     </Pressable>
-                  </ThemedView>
+                  </View>
                 ))
               )}
             </View>
 
-            {/* Add Contact Card */}
-            <ThemedView type="backgroundElement" style={styles.addCard}>
-              <ThemedText type="smallBold" style={styles.subsectionTitle}>
-                ➕ Add New Contact
-              </ThemedText>
+            {/* Add Contact */}
+            <View style={styles.addCard}>
+              <View style={styles.addHeaderRow}>
+                <SymbolView
+                  name={{
+                    ios: 'person.crop.circle.badge.plus',
+                    android: 'person_add',
+                    web: 'person_add',
+                  } as any}
+                  size={20}
+                  tintColor={theme.text}
+                />
+                <ThemedText type="smallBold" style={styles.subsectionTitle}>
+                  Add New Contact
+                </ThemedText>
+              </View>
 
               <View style={styles.inputGroup}>
                 <ThemedText type="small" style={styles.inputLabel} themeColor="textSecondary">
@@ -361,7 +374,7 @@ export default function EmergencyContactsScreen() {
                   Save Contact
                 </ThemedText>
               </Pressable>
-            </ThemedView>
+            </View>
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -389,7 +402,7 @@ const styles = StyleSheet.create({
   backButton: {
     width: 44,
     height: 44,
-    borderRadius: 22,
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -441,15 +454,15 @@ const styles = StyleSheet.create({
   contactCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    borderRadius: 18,
+    paddingVertical: 12,
+    paddingHorizontal: 0,
+    backgroundColor: 'transparent',
     gap: 12,
   },
   contactIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(128, 128, 128, 0.15)',
+    width: 36,
+    height: 36,
+    backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -466,14 +479,21 @@ const styles = StyleSheet.create({
   deleteButton: {
     width: 40,
     height: 40,
-    borderRadius: 20,
+    backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
   },
   addCard: {
-    padding: 20,
-    borderRadius: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 0,
+    backgroundColor: 'transparent',
     gap: 16,
+  },
+  addHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
   },
   inputGroup: {
     gap: 6,

@@ -144,24 +144,20 @@ export default function ExploreScreen() {
             <Pressable
               onPress={() => router.push('/emergency-contacts' as any)}
               style={({ pressed }) => [
-                styles.featureCard,
-                { 
-                  backgroundColor: isDark ? 'rgba(167, 139, 250, 0.12)' : 'rgba(124, 58, 237, 0.06)',
-                },
+                styles.actionItem,
+                { backgroundColor: 'transparent', borderWidth: 0, elevation: 0, shadowOpacity: 0 },
                 pressed && styles.pressed,
               ]}
             >
-              <View style={[styles.iconCircle, { backgroundColor: isDark ? 'rgba(167, 139, 250, 0.2)' : 'rgba(124, 58, 237, 0.12)' }]}>
-                <SymbolView
-                  name={{
-                    ios: 'person.2.fill',
-                    android: 'group',
-                    web: 'users',
-                  } as any}
-                  size={18}
-                  tintColor={isDark ? '#C084FC' : '#7C3AED'}
-                />
-              </View>
+              <SymbolView
+                name={{
+                  ios: 'person.2.fill',
+                  android: 'group',
+                  web: 'group',
+                } as any}
+                size={28}
+                tintColor={isDark ? '#C084FC' : '#7C3AED'}
+              />
 
               <View style={styles.cardContent}>
                 <ThemedText style={styles.cardTitle}>
@@ -182,24 +178,20 @@ export default function ExploreScreen() {
             <Pressable
               onPress={() => router.push('/live-location' as any)}
               style={({ pressed }) => [
-                styles.featureCard,
-                { 
-                  backgroundColor: isDark ? 'rgba(96, 165, 250, 0.12)' : 'rgba(37, 99, 235, 0.06)',
-                },
+                styles.actionItem,
+                { backgroundColor: 'transparent', borderWidth: 0, elevation: 0, shadowOpacity: 0 },
                 pressed && styles.pressed,
               ]}
             >
-              <View style={[styles.iconCircle, { backgroundColor: isDark ? 'rgba(96, 165, 250, 0.2)' : 'rgba(37, 99, 235, 0.12)' }]}>
-                <SymbolView
-                  name={{
-                    ios: 'location.fill',
-                    android: 'location-on',
-                    web: 'location',
-                  } as any}
-                  size={18}
-                  tintColor={isDark ? '#60A5FA' : '#2563EB'}
-                />
-              </View>
+              <SymbolView
+                name={{
+                  ios: 'location.fill',
+                  android: 'location_on',
+                  web: 'location_on',
+                } as any}
+                size={28}
+                tintColor={isDark ? '#60A5FA' : '#2563EB'}
+              />
 
               <View style={styles.cardContent}>
                 <ThemedText style={styles.cardTitle}>
@@ -220,24 +212,20 @@ export default function ExploreScreen() {
             <Pressable
               onPress={() => router.push('/safety-timer')}
               style={({ pressed }) => [
-                styles.featureCard,
-                { 
-                  backgroundColor: isDark ? 'rgba(251, 191, 36, 0.12)' : 'rgba(217, 119, 6, 0.06)',
-                },
+                styles.actionItem,
+                { backgroundColor: 'transparent', borderWidth: 0, elevation: 0, shadowOpacity: 0 },
                 pressed && styles.pressed,
               ]}
             >
-              <View style={[styles.iconCircle, { backgroundColor: isDark ? 'rgba(251, 191, 36, 0.2)' : 'rgba(217, 119, 6, 0.12)' }]}>
-                <SymbolView
-                  name={{
-                    ios: 'timer',
-                    android: 'timer',
-                    web: 'clock',
-                  } as any}
-                  size={18}
-                  tintColor={isDark ? '#FBBF24' : '#D97706'}
-                />
-              </View>
+              <SymbolView
+                name={{
+                  ios: 'timer',
+                  android: 'timer',
+                  web: 'timer',
+                } as any}
+                size={28}
+                tintColor={isDark ? '#FBBF24' : '#D97706'}
+              />
 
               <View style={styles.cardContent}>
                 <ThemedText style={styles.cardTitle}>
@@ -258,24 +246,20 @@ export default function ExploreScreen() {
             <Pressable
               onPress={() => router.push('/safe-places')}
               style={({ pressed }) => [
-                styles.featureCard,
-                { 
-                  backgroundColor: isDark ? 'rgba(52, 211, 153, 0.12)' : 'rgba(5, 150, 105, 0.06)',
-                },
+                styles.actionItem,
+                { backgroundColor: 'transparent', borderWidth: 0, elevation: 0, shadowOpacity: 0 },
                 pressed && styles.pressed,
               ]}
             >
-              <View style={[styles.iconCircle, { backgroundColor: isDark ? 'rgba(52, 211, 153, 0.2)' : 'rgba(5, 150, 105, 0.12)' }]}>
-                <SymbolView
-                  name={{
-                    ios: 'map.fill',
-                    android: 'map',
-                    web: 'map',
-                  } as any}
-                  size={18}
-                  tintColor={isDark ? '#34D399' : '#059669'}
-                />
-              </View>
+              <SymbolView
+                name={{
+                  ios: 'mappin.and.ellipse',
+                  android: 'place',
+                  web: 'place',
+                } as any}
+                size={28}
+                tintColor={isDark ? '#34D399' : '#059669'}
+              />
 
               <View style={styles.cardContent}>
                 <ThemedText style={styles.cardTitle}>
@@ -470,22 +454,17 @@ const styles = StyleSheet.create({
     gap: 10,
   },
 
-  featureCard: {
+  actionItem: {
     width: '48%',
-    height: 90,
-    padding: 10,
-    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 6,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
-  },
-
-  iconCircle: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    justifyContent: 'center',
-    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    shadowOpacity: 0,
+    elevation: 0,
   },
 
   cardContent: {

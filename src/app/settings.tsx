@@ -11,13 +11,16 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
-import { router } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useVoiceSOS } from '@/hooks/voice-sos-provider';
+import { useTheme } from '@/hooks/use-theme';
+
+const PREDEFINED_PHRASES = ['help help', 'danger danger', 'emergency', 'safeher activate'];
 
 export default function SettingsScreen() {
+    const theme = useTheme();
     const [automaticSOS, setAutomaticSOS] = useState(false);
     const [autoLocationMonitoring, setAutoLocationMonitoring] = useState(false);
 
@@ -30,14 +33,9 @@ export default function SettingsScreen() {
         setEmergencyPhrase,
     } = useVoiceSOS();
 
-    const [customPhraseInput, setCustomPhraseInput] = useState('');
-    const PREDEFINED_PHRASES = ['help help', 'danger danger', 'emergency', 'safeher activate'];
-
-    useEffect(() => {
-        if (!PREDEFINED_PHRASES.includes(emergencyPhrase)) {
-            setCustomPhraseInput(emergencyPhrase);
-        }
-    }, [emergencyPhrase]);
+    const [customPhraseInput, setCustomPhraseInput] = useState(
+        !PREDEFINED_PHRASES.includes(emergencyPhrase) ? emergencyPhrase : ''
+    );
 
     const handleCustomPhraseChange = (text: string) => {
         setCustomPhraseInput(text);
@@ -122,20 +120,7 @@ export default function SettingsScreen() {
                 >
                     {/* Header */}
                     <View style={styles.header}>
-                        <Pressable
-                            onPress={() => router.back()}
-                            style={styles.backButton}
-                        >
-                            <SymbolView
-                                name={{
-                                    ios: 'chevron.left',
-                                    android: 'arrow-back',
-                                    web: 'arrow-left',
-                                } as any}
-                                size={24}
-                                tintColor="#111827"
-                            />
-                        </Pressable>
+                        <View style={styles.headerSpace} />
 
                         <ThemedText style={styles.headerTitle}>
                             Safety Settings
@@ -146,9 +131,20 @@ export default function SettingsScreen() {
 
                     {/* AI Safety Automation */}
                     <View style={styles.section}>
-                        <ThemedText style={styles.sectionTitle}>
-                            🤖 AI Safety Automation
-                        </ThemedText>
+                        <View style={styles.sectionHeaderRow}>
+                            <SymbolView
+                                name={{
+                                    ios: 'sparkles',
+                                    android: 'smart_toy',
+                                    web: 'smart_toy',
+                                } as any}
+                                size={24}
+                                tintColor={theme.text}
+                            />
+                            <ThemedText style={styles.sectionTitle}>
+                                AI Safety Automation
+                            </ThemedText>
+                        </View>
 
                         <ThemedText style={styles.sectionDescription}>
                             Configure how SafeHer AI responds when it detects
@@ -188,15 +184,15 @@ export default function SettingsScreen() {
 
                         {/* Automatic Location Monitoring Toggle */}
                         <View style={[styles.settingCard, { marginTop: 12 }]}>
-                            <View style={[styles.iconContainer, { backgroundColor: '#7C3AED' }]}>
+                            <View style={[styles.iconContainer, { backgroundColor: 'transparent' }]}>
                                 <SymbolView
                                     name={{
                                         ios: 'location.fill',
-                                        android: 'location-on',
-                                        web: 'map-marker',
+                                        android: 'location_on',
+                                        web: 'location_on',
                                     } as any}
-                                    size={26}
-                                    tintColor="#FFFFFF"
+                                    size={28}
+                                    tintColor="#7C3AED"
                                 />
                             </View>
 
@@ -300,7 +296,7 @@ export default function SettingsScreen() {
                                                 styles.phraseOptionText,
                                                 emergencyPhrase === phrase && styles.phraseOptionTextSelected
                                             ]}>
-                                                "{phrase}"
+                                                &quot;{phrase}&quot;
                                             </ThemedText>
                                         </Pressable>
                                     ))}
@@ -363,7 +359,7 @@ export default function SettingsScreen() {
                         {voiceSOSStatus === 'listening' && transcription !== '' && (
                             <View style={styles.transcriptionContainer}>
                                 <ThemedText style={styles.transcriptionLabel}>Live Speech Transcript:</ThemedText>
-                                <ThemedText style={styles.transcriptionText}>"{transcription}"</ThemedText>
+                                <ThemedText style={styles.transcriptionText}>&quot;{transcription}&quot;</ThemedText>
                             </View>
                         )}
                     </View>
@@ -511,15 +507,6 @@ const styles = StyleSheet.create({
         paddingVertical: 16,
     },
 
-    backButton: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        backgroundColor: '#FFFFFF',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-
     headerTitle: {
         fontSize: 20,
         fontWeight: '700',
@@ -531,6 +518,14 @@ const styles = StyleSheet.create({
 
     section: {
         marginTop: 20,
+        backgroundColor: 'transparent',
+    },
+
+    sectionHeaderRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        backgroundColor: 'transparent',
     },
 
     sectionTitle: {

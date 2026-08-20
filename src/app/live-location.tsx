@@ -93,13 +93,16 @@ export default function LiveLocationScreen() {
                     <View style={styles.header}>
                         <Pressable
                             onPress={() => router.back()}
-                            style={[styles.backButton, { backgroundColor: theme.backgroundElement }]}
+                            style={({ pressed }) => [
+                                styles.backButton,
+                                pressed && styles.pressed,
+                            ]}
                         >
                             <SymbolView
                                 name={{
-                                    ios: 'chevron.left',
-                                    android: 'arrow-back',
-                                    web: 'arrow-left',
+                                    ios: 'location.fill',
+                                    android: 'location_on',
+                                    web: 'location_on',
                                 } as any}
                                 size={24}
                                 tintColor={theme.text}
@@ -115,17 +118,15 @@ export default function LiveLocationScreen() {
 
                     {/* Location Icon & Pulse status */}
                     <View style={styles.iconContainer}>
-                        <View style={[styles.locationBadge, { backgroundColor: loading ? '#3B82F6' : error ? '#EF4444' : '#10B981' }]}>
-                            <SymbolView
-                                name={{
-                                    ios: 'location.fill',
-                                    android: 'location-on',
-                                    web: 'location',
-                                } as any}
-                                size={50}
-                                tintColor="#FFFFFF"
-                            />
-                        </View>
+                        <SymbolView
+                            name={{
+                                ios: 'location.fill',
+                                android: 'location_on',
+                                web: 'location_on',
+                            } as any}
+                            size={48}
+                            tintColor={loading ? '#3B82F6' : error ? '#EF4444' : '#10B981'}
+                        />
                     </View>
 
                     {/* Main Card */}
@@ -156,12 +157,12 @@ export default function LiveLocationScreen() {
                                 </ThemedText>
                                 {errorType === 'permission_denied' && (
                                     <ThemedText style={styles.errorHelp} themeColor="textSecondary">
-                                        Please enable location permissions for SafeHer AI in your device's settings.
+                                        Please enable location permissions for SafeHer AI in your device&apos;s settings.
                                     </ThemedText>
                                 )}
                                 {errorType === 'services_disabled' && (
                                     <ThemedText style={styles.errorHelp} themeColor="textSecondary">
-                                        Please toggle your device's GPS/location service switch on.
+                                        Please toggle your device&apos;s GPS/location service switch on.
                                     </ThemedText>
                                 )}
                                 <Pressable
@@ -350,7 +351,7 @@ const styles = StyleSheet.create({
     backButton: {
         width: 44,
         height: 44,
-        borderRadius: 22,
+        backgroundColor: 'transparent',
         alignItems: 'center',
         justifyContent: 'center',
     },
@@ -363,20 +364,9 @@ const styles = StyleSheet.create({
     },
     iconContainer: {
         alignItems: 'center',
-        marginTop: 20,
-        marginBottom: 24,
-    },
-    locationBadge: {
-        width: 100,
-        height: 100,
-        borderRadius: 50,
-        alignItems: 'center',
         justifyContent: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
-        elevation: 4,
+        marginTop: 12,
+        marginBottom: 20,
     },
     mainCard: {
         borderRadius: 24,

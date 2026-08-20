@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { Audio } from 'expo-av';
 
 import { useLocation } from '@/hooks/use-location';
@@ -186,53 +186,52 @@ export default function SOSScreen() {
     useEffect(() => {
         if (!isCounting) return;
 
-        if (countdown === 0) {
-            setIsCounting(false);
-            setIsActivated(true);
-            playSOSSound();
-
-            const notifyContacts = async () => {
-                try {
-                    const saved = await AsyncStorage.getItem('emergencyContacts');
-                    const contactsList: Contact[] = saved ? JSON.parse(saved) : [];
-                    if (contactsList.length === 0) {
-                        Alert.alert(
-                            '🚨 SOS Activated',
-                            'Emergency SOS has been activated! No emergency contacts configured. Please configure them in the Safety Center.'
-                        );
-                    } else {
-                        const contactDetails = contactsList.map((c) => `${c.name} (${c.phone})`).join(', ');
-                        const locationInfo = liveLocation 
-                             ? `Your live location link has been prepared:\n${liveLocation.googleMapsLink}\n\nSecure Live Tracking Viewer:\nsafeherai://track-victim?userId=${user?.id}`
-                             : `Unable to include location:\n${locationError || 'Retrieving GPS coordinates timed out.'}`;
-
-                        Alert.alert(
-                            '🚨 SOS Activated',
-                            `Emergency SOS has been activated. Alerts have been sent to your emergency contacts:\n\n${contactDetails}\n\n${locationInfo}`
-                        );
-                    }
-                } catch (error) {
-                    console.log('Error notifying emergency contacts:', error);
-                    const fallbackLocationInfo = liveLocation
-                        ? `\n\nLive Location prepared: ${liveLocation.googleMapsLink}`
-                        : '';
-                    Alert.alert(
-                        '🚨 SOS Activated',
-                        `Emergency SOS has been activated. Your emergency contacts can now be alerted.${fallbackLocationInfo}`
-                    );
-                }
-            };
-            notifyContacts();
-
-            return;
-        }
-
         const timer = setTimeout(() => {
-            setCountdown((previous) => previous - 1);
+            setCountdown((previous) => {
+                if (previous <= 1) {
+                    setIsCounting(false);
+                    setIsActivated(true);
+                    void playSOSSound();
+
+                    void (async () => {
+                        try {
+                            const saved = await AsyncStorage.getItem('emergencyContacts');
+                            const contactsList: Contact[] = saved ? JSON.parse(saved) : [];
+                            if (contactsList.length === 0) {
+                                Alert.alert(
+                                    '🚨 SOS Activated',
+                                    'Emergency SOS has been activated! No emergency contacts configured. Please configure them in the Safety Center.'
+                                );
+                            } else {
+                                const contactDetails = contactsList.map((c) => `${c.name} (${c.phone})`).join(', ');
+                                const locationInfo = liveLocation 
+                                    ? `\n\nLive Location link: ${liveLocation.googleMapsLink}`
+                                    : '';
+                                Alert.alert(
+                                    '🚨 SOS Activated',
+                                    `Emergency SOS has been activated. Alerts have been sent to your emergency contacts:\n\n${contactDetails}\n\n${locationInfo}`
+                                );
+                            }
+                        } catch (error) {
+                            console.log('Error notifying emergency contacts:', error);
+                            const fallbackLocationInfo = liveLocation
+                                ? `\n\nLive Location prepared: ${liveLocation.googleMapsLink}`
+                                : '';
+                            Alert.alert(
+                                '🚨 SOS Activated',
+                                `Emergency SOS has been activated. Your emergency contacts can now be alerted.${fallbackLocationInfo}`
+                            );
+                        }
+                    })();
+
+                    return 0;
+                }
+                return previous - 1;
+            });
         }, 1000);
 
         return () => clearTimeout(timer);
-    }, [isCounting, countdown]);
+    }, [isCounting, liveLocation]);
 
     const startSOS = useCallback(() => {
         setCountdown(5);
@@ -290,20 +289,7 @@ export default function SOSScreen() {
                 >
                     {/* Header */}
                     <View style={styles.header}>
-                        <Pressable
-                            onPress={() => router.back()}
-                            style={styles.backButton}
-                        >
-                            <SymbolView
-                                name={{
-                                    ios: 'chevron.left',
-                                    android: 'arrow-back',
-                                    web: 'arrow-left',
-                                } as any}
-                                size={24}
-                                tintColor="#111827"
-                            />
-                        </Pressable>
+                        <View style={styles.headerSpace} />
 
                         <ThemedText style={styles.headerTitle}>
                             Emergency SOS
@@ -567,15 +553,6 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'space-between',
         paddingVertical: 16,
-    },
-
-    backButton: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        backgroundColor: '#FFFFFF',
-        alignItems: 'center',
-        justifyContent: 'center',
     },
 
     headerTitle: {

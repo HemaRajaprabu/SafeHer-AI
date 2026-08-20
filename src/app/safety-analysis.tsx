@@ -183,20 +183,7 @@ export default function SafetyAnalysisScreen() {
                 >
                     {/* Header */}
                     <View style={styles.header}>
-                        <Pressable
-                            onPress={() => router.back()}
-                            style={styles.backButton}
-                        >
-                            <SymbolView
-                                name={{
-                                    ios: 'chevron.left',
-                                    android: 'arrow-back',
-                                    web: 'arrow-left',
-                                } as any}
-                                size={24}
-                                tintColor="#111827"
-                            />
-                        </Pressable>
+                        <View style={styles.headerSpace} />
 
                         <ThemedText style={styles.headerTitle}>
                             AI Risk Analysis
@@ -420,15 +407,6 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'space-between',
         paddingVertical: 16,
-    },
-
-    backButton: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        backgroundColor: '#FFFFFF',
-        alignItems: 'center',
-        justifyContent: 'center',
     },
 
     headerTitle: {

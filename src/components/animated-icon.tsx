@@ -114,22 +114,28 @@ const styles = StyleSheet.create({
   imageContainer: {
     justifyContent: 'center',
     alignItems: 'center',
+    width: 128,
+    height: 128,
+    position: 'absolute',
+    zIndex: 2,
   },
   glow: {
-    width: 201,
-    height: 201,
+    width: 140,
+    height: 140,
     position: 'absolute',
+    zIndex: 0,
   },
   iconContainer: {
     justifyContent: 'center',
     alignItems: 'center',
     width: 128,
     height: 128,
-    zIndex: 100,
+    position: 'relative',
   },
   image: {
     width: 76,
     height: 71,
+    zIndex: 3,
   },
   background: {
     borderRadius: 40,
@@ -137,6 +143,7 @@ const styles = StyleSheet.create({
     width: 128,
     height: 128,
     position: 'absolute',
+    zIndex: 1,
   },
   splashOverlay: {
     ...StyleSheet.absoluteFill,

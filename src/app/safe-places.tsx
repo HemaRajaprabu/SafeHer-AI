@@ -155,9 +155,13 @@ export default function SafePlacesScreen() {
 
   useEffect(() => {
     if (location?.latitude && location?.longitude) {
-      fetchNearbyPlaces(location.latitude, location.longitude, searchRadiusKm);
+      const lat = location.latitude;
+      const lng = location.longitude;
+      void (async () => {
+        await fetchNearbyPlaces(lat, lng, searchRadiusKm);
+      })();
     }
-  }, [location, searchRadiusKm, fetchNearbyPlaces]);
+  }, [location?.latitude, location?.longitude, searchRadiusKm, fetchNearbyPlaces]);
 
   const handleRefresh = async () => {
     const loc = await refreshLocation();
@@ -220,12 +224,12 @@ export default function SafePlacesScreen() {
           <Pressable onPress={() => router.back()} style={styles.backButton}>
             <SymbolView
               name={{
-                ios: 'chevron.left',
-                android: 'arrow_back',
-                web: 'arrow-left',
+                ios: 'mappin.and.ellipse',
+                android: 'place',
+                web: 'place',
               } as any}
               size={24}
-              tintColor={isDark ? '#FFFFFF' : '#111827'}
+              tintColor={isDark ? '#34D399' : '#059669'}
             />
           </Pressable>
 
@@ -241,7 +245,7 @@ export default function SafePlacesScreen() {
               name={{
                 ios: 'arrow.clockwise',
                 android: 'refresh',
-                web: 'sync',
+                web: 'refresh',
               } as any}
               size={20}
               tintColor={isDark ? '#FFFFFF' : '#111827'}
@@ -251,15 +255,15 @@ export default function SafePlacesScreen() {
 
         {/* User Location Bar */}
         {location && (
-          <View style={[styles.locationBar, { backgroundColor: isDark ? '#1E293B' : '#E2E8F0' }]}>
+          <View style={styles.locationBar}>
             <SymbolView
               name={{
-                ios: 'location.circle.fill',
-                android: 'my-location',
-                web: 'location-arrow',
+                ios: 'location.fill',
+                android: 'location_on',
+                web: 'location_on',
               } as any}
               size={16}
-              tintColor="#7C3AED"
+              tintColor={isDark ? '#A78BFA' : '#7C3AED'}
             />
             <ThemedText style={styles.locationBarText}>
               Current GPS: {location?.latitude?.toFixed(5)}, {location?.longitude?.toFixed(5)}
@@ -435,11 +439,11 @@ export default function SafePlacesScreen() {
                   >
                     <SymbolView
                       name={{
-                        ios: 'safari.fill',
-                        android: 'directions',
-                        web: 'location-arrow',
+                        ios: 'location.north.fill',
+                        android: 'navigation',
+                        web: 'navigation',
                       } as any}
-                      size={18}
+                      size={15}
                       tintColor="#FFFFFF"
                     />
                     <ThemedText style={styles.navigateBtnText}>Go</ThemedText>
@@ -473,7 +477,7 @@ const styles = StyleSheet.create({
   backButton: {
     width: 40,
     height: 40,
-    borderRadius: 20,
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -492,7 +496,7 @@ const styles = StyleSheet.create({
   refreshButton: {
     width: 40,
     height: 40,
-    borderRadius: 20,
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -501,6 +505,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 8,
+    backgroundColor: 'transparent',
     gap: 8,
   },
   locationBarText: {
