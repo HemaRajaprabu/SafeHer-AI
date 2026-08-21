@@ -1,5 +1,8 @@
-import { useEffect, useState, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Audio } from 'expo-av';
+import { useLocalSearchParams } from 'expo-router';
+import { SymbolView } from 'expo-symbols';
+import { useCallback, useEffect, useState } from 'react';
 import {
     Alert,
     Linking,
@@ -10,13 +13,10 @@ import {
     View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { SymbolView } from 'expo-symbols';
-import { useLocalSearchParams } from 'expo-router';
-import { Audio } from 'expo-av';
 
+import { useAuth } from '@/hooks/use-auth';
 import { useLocation } from '@/hooks/use-location';
 import { useVoiceSOS } from '@/hooks/voice-sos-provider';
-import { useAuth } from '@/hooks/use-auth';
 import { supabase } from '@/utils/supabase';
 
 import { ThemedText } from '@/components/themed-text';
@@ -92,7 +92,7 @@ export default function SOSScreen() {
             try {
                 if (isActivated) {
                     await AsyncStorage.setItem('isSOSActive', 'true');
-                    
+
                     // Attempt to start background tracking
                     const bgSuccess = await startBackgroundTracking();
                     if (!bgSuccess) {
@@ -102,7 +102,7 @@ export default function SOSScreen() {
                             [{ text: "OK" }]
                         );
                     }
-                    
+
                     // Also start foreground tracking as double-safety / fallback
                     await startTracking((newLoc) => {
                         updateSupabaseLocation(newLoc);
@@ -204,7 +204,7 @@ export default function SOSScreen() {
                                 );
                             } else {
                                 const contactDetails = contactsList.map((c) => `${c.name} (${c.phone})`).join(', ');
-                                const locationInfo = liveLocation 
+                                const locationInfo = liveLocation
                                     ? `\n\nLive Location link: ${liveLocation.googleMapsLink}`
                                     : '';
                                 Alert.alert(
@@ -470,13 +470,13 @@ export default function SOSScreen() {
                                 </ThemedText>
 
                                 <ThemedText style={styles.actionDescription}>
-                                     {isTracking || isBackgroundTracking
-                                         ? `${isBackgroundTracking ? '🟢 Background Tracking Active' : '🟢 Tracking Active'}: ${liveLocation ? `${liveLocation.latitude.toFixed(4)}, ${liveLocation.longitude.toFixed(4)}` : 'Syncing...'} (Tap to share)` 
-                                         : locationLoading 
-                                             ? 'Fetching live location...' 
-                                             : liveLocation 
-                                                 ? `⚪ Tracking Stopped: ${liveLocation.latitude.toFixed(4)}, ${liveLocation.longitude.toFixed(4)} (Tap to share)` 
-                                                 : `⚪ Tracking Stopped: ${locationError || 'Unavailable'}. Tap to retry.`}
+                                    {isTracking || isBackgroundTracking
+                                        ? `${isBackgroundTracking ? '🟢 Background Tracking Active' : '🟢 Tracking Active'}: ${liveLocation ? `${liveLocation.latitude.toFixed(4)}, ${liveLocation.longitude.toFixed(4)}` : 'Syncing...'} (Tap to share)`
+                                        : locationLoading
+                                            ? 'Fetching live location...'
+                                            : liveLocation
+                                                ? `⚪ Tracking Stopped: ${liveLocation.latitude.toFixed(4)}, ${liveLocation.longitude.toFixed(4)} (Tap to share)`
+                                                : `⚪ Tracking Stopped: ${locationError || 'Unavailable'}. Tap to retry.`}
                                 </ThemedText>
                             </View>
                         </Pressable>
