@@ -1,11 +1,9 @@
 import * as Device from 'expo-device';
-
 import { Platform, Pressable, StyleSheet, ScrollView, View, useWindowDimensions, Text } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 import { router } from 'expo-router';
 
-import { AnimatedIcon } from '@/components/animated-icon';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { WebBadge } from '@/components/web-badge';
@@ -14,70 +12,122 @@ import { useTheme } from '@/hooks/use-theme';
 import { useAuth } from '@/hooks/use-auth';
 import LocationSafetyCard from '@/components/LocationSafetyCard';
 
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
-  return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
-}
-
 export default function HomeScreen() {
   const theme = useTheme();
   useAuth();
   const { width } = useWindowDimensions();
 
-  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
-  const isDark = theme.text === '#ffffff';
-
-  // Responsive card widths: 4 in a row for desktop, 2 for tablet, stacked vertically or 2 per row for mobile
   const isLarge = width >= 1024;
-  const isMedium = width >= 768 && width < 1024;
-  const cardWidth = isLarge ? '23.5%' : isMedium ? '48%' : '100%';
+  const isMedium = width >= 640 && width < 1024;
+  const isSmallMobile = width < 480;
 
-  // Local color configuration that adapts to light/dark themes
-  const colors = {
-    bg: isDark ? '#0C0812' : '#FAF9FF', // Deep eggplant / soft lilac-lavender
-    cardBg: isDark ? '#15101F' : '#FFFFFF', // Dark card / white card
-    border: isDark ? '#2D253A' : '#F0E6EC',
-    text: isDark ? '#FFFFFF' : '#1E1B1D',
-    textSec: isDark ? '#A195B0' : '#786E75',
-    primary: '#7C3AED', // Brand Purple
-    primaryLight: isDark ? '#2E1065' : '#F3E8FF', // Dark purple / soft purple tint
-  };
+  // Compute responsive card width
+  // Desktop: null (uses flex: 1 to fill row equally), Tablet: '48%', Mobile: '100%'
+  const cardWidth = isLarge ? undefined : isMedium ? '48%' : '100%';
 
   return (
-    <ThemedView style={[styles.container, { backgroundColor: colors.bg }]}>
+    <ThemedView style={styles.container}>
+      {/* Decorative Pastel Background & Blurred Ambient Bubbles + Stars */}
+      <View style={styles.backgroundDecorativeLayer}>
+        <View style={styles.bubblePink} />
+        <View style={styles.bubblePurple} />
+        <View style={styles.bubbleBlue} />
+        <View style={styles.bubbleLavender} />
+        <View style={styles.bubbleAmber} />
+        
+        <View style={styles.curvedAccentLine} />
+        <View style={styles.curvedAccentLine2} />
+        <View style={styles.curvedAccentLine3} />
+
+        {/* Small Glowing Star / Plus Elements */}
+        <Text style={[styles.decorStar, { top: 80, left: '12%' }]}>✦</Text>
+        <Text style={[styles.decorStar, { top: 160, right: '14%', color: 'rgba(236, 72, 153, 0.45)' }]}>✦</Text>
+        <Text style={[styles.decorPlus, { top: 320, left: '6%' }]}>+</Text>
+        <Text style={[styles.decorStar, { bottom: 260, left: '18%', color: 'rgba(99, 102, 241, 0.4)' }]}>✦</Text>
+        <Text style={[styles.decorPlus, { bottom: 180, right: '8%', color: 'rgba(236, 72, 153, 0.4)' }]}>+</Text>
+        <Text style={[styles.decorStar, { bottom: 80, right: '22%' }]}>✦</Text>
+        
+        {/* Floating circles/dots */}
+        <View style={[styles.decorDot, { top: 100, right: '30%', backgroundColor: 'rgba(167, 139, 250, 0.6)' }]} />
+        <View style={[styles.decorDot, { bottom: 120, left: '25%', backgroundColor: 'rgba(244, 114, 182, 0.6)' }]} />
+      </View>
+
       <SafeAreaView style={styles.safeArea}>
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          style={styles.scrollView}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingHorizontal: width < 640 ? 16 : 24 },
+            Platform.OS === 'web' && styles.scrollContentWeb,
+          ]}
           showsVerticalScrollIndicator={false}
         >
+          {/* TOP NAVIGATION BAR */}
+          <View style={styles.navBarContainer}>
+            <View style={[styles.topNavBar, isSmallMobile && { paddingHorizontal: 10, paddingVertical: 8 }]}>
+              <View style={[styles.navLeft, isSmallMobile && { gap: 6 }]}>
+                <View style={[styles.navShieldIcon, isSmallMobile && { width: 24, height: 24 }]}>
+                  <SymbolView
+                    name={{
+                      ios: 'shield.fill',
+                      android: 'security',
+                      web: 'shield',
+                    } as any}
+                    size={isSmallMobile ? 18 : 22}
+                    tintColor="#8B5CF6"
+                  />
+                  <SymbolView
+                    name={{
+                      ios: 'heart.fill',
+                      android: 'favorite',
+                      web: 'favorite',
+                    } as any}
+                    size={isSmallMobile ? 8 : 10}
+                    tintColor="#FFFFFF"
+                    style={[styles.navShieldHeart, isSmallMobile && { top: 7 }]}
+                  />
+                </View>
+                <Text style={[styles.navLogoText, isSmallMobile && { fontSize: 14 }]}>SafeHer AI</Text>
+              </View>
+
+              <View style={[styles.navRight, isSmallMobile && { gap: 4 }]}>
+                <View style={[styles.navPill, styles.navPillActive, isSmallMobile && { paddingHorizontal: 8, paddingVertical: 6 }]}>
+                  <Text style={[styles.navPillActiveText, isSmallMobile && { fontSize: 11 }]}>Home</Text>
+                </View>
+                <Pressable style={[styles.navPill, isSmallMobile && { paddingHorizontal: 8, paddingVertical: 6 }]}>
+                  <Text style={[styles.navPillInactiveText, isSmallMobile && { fontSize: 11 }]}>Explore</Text>
+                </Pressable>
+                <Pressable style={[styles.navPill, styles.navPillWithIcon, isSmallMobile && { paddingHorizontal: 8, paddingVertical: 6 }]}>
+                  <Text style={[styles.navPillInactiveText, isSmallMobile && { fontSize: 11 }]}>Docs</Text>
+                  <SymbolView
+                    name={{
+                      ios: 'link',
+                      android: 'link',
+                      web: 'link',
+                    } as any}
+                    size={isSmallMobile ? 10 : 12}
+                    tintColor="#475569"
+                  />
+                </Pressable>
+              </View>
+            </View>
+          </View>
+
           {/* Header Section */}
-          <ThemedView style={[styles.heroSection, { backgroundColor: colors.bg }]}>
-            <AnimatedIcon />
-            <ThemedText type="title" style={[styles.title, { color: colors.text }]}>
+          <View style={styles.heroSection}>
+            <Text style={[styles.title, { fontSize: width < 640 ? 38 : 52, lineHeight: width < 640 ? 44 : 60 }, styles.titleGradient]}>
               SafeHer AI
-            </ThemedText>
-            <ThemedText style={[styles.subtitle, { color: colors.textSec }]} themeColor="textSecondary">
+            </Text>
+
+            <ThemedText style={[styles.subtitle, { fontSize: width < 640 ? 15 : 18 }]} themeColor="textSecondary">
               Your Safety Companion
             </ThemedText>
+
             <Pressable
               onPress={() => router.push('/settings')}
               style={({ pressed }) => [
                 styles.settingsButton,
-                { backgroundColor: colors.primary },
+                styles.settingsButtonGradient,
                 pressed && styles.pressed,
               ]}
             >
@@ -90,43 +140,62 @@ export default function HomeScreen() {
                 size={18}
                 tintColor="#FFFFFF"
               />
-
               <ThemedText style={styles.settingsButtonText}>
                 Safety Settings
               </ThemedText>
             </Pressable>
+          </View>
 
-          </ThemedView>
-
-          {/* Keep LocationSafetyCard functional but visually hidden from UI */}
+          {/* Hidden Location Safety Provider */}
           <View style={{ display: 'none' }}>
             <LocationSafetyCard />
           </View>
 
-          {/* Feature-Card Dashboard Grid */}
+          {/* Four Feature Cards */}
           <View style={[styles.grid, { flexWrap: isLarge ? 'nowrap' : 'wrap' }]}>
             {/* CARD 1: SOS */}
             <Pressable
               onPress={() => router.push('/sos')}
               style={({ pressed }) => [
                 styles.card,
-                { width: cardWidth, backgroundColor: colors.cardBg, borderColor: colors.border },
+                styles.cardSOS,
+                isLarge && { flex: 1 },
+                { width: cardWidth },
                 pressed && styles.pressed,
               ]}
             >
-              <View style={styles.cardHeader}>
-                <View style={[styles.iconCircle, { backgroundColor: isDark ? '#451A1A' : '#FEE2E2' }]}>
-                  <SymbolView name={"light.beacon.max.fill" as any} size={22} tintColor="#EF4444" />
-                </View>
+              <View style={[styles.cardWaveOuter, styles.cardWaveOuterSOS]} />
+              <View style={[styles.cardWaveInner, styles.cardWaveInnerSOS]} />
+
+              <View style={[styles.iconContainerCard, styles.iconContainerSOS]}>
+                <SymbolView
+                  name={{
+                    ios: 'light.beacon.max.fill',
+                    android: 'crisis_alert',
+                    web: 'crisis_alert',
+                  } as any}
+                  size={32}
+                  tintColor="#EF4444"
+                />
               </View>
+
               <View style={styles.cardBody}>
-                <Text style={[styles.cardTitle, { color: colors.text }]}>SOS</Text>
-                <Text style={[styles.cardDesc, { color: colors.textSec }]}>
+                <Text style={styles.cardTitle}>SOS</Text>
+                <Text style={styles.cardDesc}>
                   Get immediate help in emergency situations
                 </Text>
               </View>
-              <View style={[styles.arrowCircle, { backgroundColor: colors.primaryLight }]}>
-                <SymbolView name={"chevron.right" as any} size={12} tintColor={colors.primary} />
+
+              <View style={[styles.arrowCircle, styles.arrowCircleSOS]}>
+                <SymbolView
+                  name={{
+                    ios: 'chevron.right',
+                    android: 'chevron_right',
+                    web: 'chevron_right',
+                  } as any}
+                  size={15}
+                  tintColor="#EF4444"
+                />
               </View>
             </Pressable>
 
@@ -135,23 +204,44 @@ export default function HomeScreen() {
               onPress={() => router.push('/live-location')}
               style={({ pressed }) => [
                 styles.card,
-                { width: cardWidth, backgroundColor: colors.cardBg, borderColor: colors.border },
+                styles.cardLocation,
+                isLarge && { flex: 1 },
+                { width: cardWidth },
                 pressed && styles.pressed,
               ]}
             >
-              <View style={styles.cardHeader}>
-                <View style={[styles.iconCircle, { backgroundColor: isDark ? '#064E3B' : '#D1FAE5' }]}>
-                  <SymbolView name={"mappin.and.ellipse" as any} size={22} tintColor="#10B981" />
-                </View>
+              <View style={[styles.cardWaveOuter, styles.cardWaveOuterLocation]} />
+              <View style={[styles.cardWaveInner, styles.cardWaveInnerLocation]} />
+
+              <View style={[styles.iconContainerCard, styles.iconContainerLocation]}>
+                <SymbolView
+                  name={{
+                    ios: 'location.fill',
+                    android: 'location_on',
+                    web: 'location_on',
+                  } as any}
+                  size={32}
+                  tintColor="#10B981"
+                />
               </View>
+
               <View style={styles.cardBody}>
-                <Text style={[styles.cardTitle, { color: colors.text }]}>Live Location</Text>
-                <Text style={[styles.cardDesc, { color: colors.textSec }]}>
+                <Text style={styles.cardTitle}>Live Location</Text>
+                <Text style={styles.cardDesc}>
                   Share your real-time location with trusted contacts
                 </Text>
               </View>
-              <View style={[styles.arrowCircle, { backgroundColor: colors.primaryLight }]}>
-                <SymbolView name={"chevron.right" as any} size={12} tintColor={colors.primary} />
+
+              <View style={[styles.arrowCircle, styles.arrowCircleLocation]}>
+                <SymbolView
+                  name={{
+                    ios: 'chevron.right',
+                    android: 'chevron_right',
+                    web: 'chevron_right',
+                  } as any}
+                  size={15}
+                  tintColor="#10B981"
+                />
               </View>
             </Pressable>
 
@@ -160,23 +250,44 @@ export default function HomeScreen() {
               onPress={() => router.push('/safety-timer')}
               style={({ pressed }) => [
                 styles.card,
-                { width: cardWidth, backgroundColor: colors.cardBg, borderColor: colors.border },
+                styles.cardTimer,
+                isLarge && { flex: 1 },
+                { width: cardWidth },
                 pressed && styles.pressed,
               ]}
             >
-              <View style={styles.cardHeader}>
-                <View style={[styles.iconCircle, { backgroundColor: isDark ? '#451E0E' : '#FEF3C7' }]}>
-                  <SymbolView name={"clock.fill" as any} size={22} tintColor="#F59E0B" />
-                </View>
+              <View style={[styles.cardWaveOuter, styles.cardWaveOuterTimer]} />
+              <View style={[styles.cardWaveInner, styles.cardWaveInnerTimer]} />
+
+              <View style={[styles.iconContainerCard, styles.iconContainerTimer]}>
+                <SymbolView
+                  name={{
+                    ios: 'timer',
+                    android: 'timer',
+                    web: 'timer',
+                  } as any}
+                  size={32}
+                  tintColor="#F59E0B"
+                />
               </View>
+
               <View style={styles.cardBody}>
-                <Text style={[styles.cardTitle, { color: colors.text }]}>Safety Timer</Text>
-                <Text style={[styles.cardDesc, { color: colors.textSec }]}>
+                <Text style={styles.cardTitle}>Safety Timer</Text>
+                <Text style={styles.cardDesc}>
                   {"Set a safety timer and get alerted if you don't check-in"}
                 </Text>
               </View>
-              <View style={[styles.arrowCircle, { backgroundColor: colors.primaryLight }]}>
-                <SymbolView name={"chevron.right" as any} size={12} tintColor={colors.primary} />
+
+              <View style={[styles.arrowCircle, styles.arrowCircleTimer]}>
+                <SymbolView
+                  name={{
+                    ios: 'chevron.right',
+                    android: 'chevron_right',
+                    web: 'chevron_right',
+                  } as any}
+                  size={15}
+                  tintColor="#F59E0B"
+                />
               </View>
             </Pressable>
 
@@ -185,51 +296,109 @@ export default function HomeScreen() {
               onPress={() => router.push('/emergency-contacts')}
               style={({ pressed }) => [
                 styles.card,
-                { width: cardWidth, backgroundColor: colors.cardBg, borderColor: colors.border },
+                styles.cardContacts,
+                isLarge && { flex: 1 },
+                { width: cardWidth },
                 pressed && styles.pressed,
               ]}
             >
-              <View style={styles.cardHeader}>
-                <View style={[styles.iconCircle, { backgroundColor: colors.primaryLight }]}>
-                  <SymbolView name={"person.2.fill" as any} size={22} tintColor={colors.primary} />
-                </View>
+              <View style={[styles.cardWaveOuter, styles.cardWaveOuterContacts]} />
+              <View style={[styles.cardWaveInner, styles.cardWaveInnerContacts]} />
+
+              <View style={[styles.iconContainerCard, styles.iconContainerContacts]}>
+                <SymbolView
+                  name={{
+                    ios: 'person.2.fill',
+                    android: 'contacts',
+                    web: 'contacts',
+                  } as any}
+                  size={32}
+                  tintColor="#8B5CF6"
+                />
               </View>
+
               <View style={styles.cardBody}>
-                <Text style={[styles.cardTitle, { color: colors.text }]}>Emergency Contacts</Text>
-                <Text style={[styles.cardDesc, { color: colors.textSec }]}>
+                <Text style={styles.cardTitle}>Emergency Contacts</Text>
+                <Text style={styles.cardDesc}>
                   Manage and connect with your emergency contacts
                 </Text>
               </View>
-              <View style={[styles.arrowCircle, { backgroundColor: colors.primaryLight }]}>
-                <SymbolView name={"chevron.right" as any} size={12} tintColor={colors.primary} />
+
+              <View style={[styles.arrowCircle, styles.arrowCircleContacts]}>
+                <SymbolView
+                  name={{
+                    ios: 'chevron.right',
+                    android: 'chevron_right',
+                    web: 'chevron_right',
+                  } as any}
+                  size={15}
+                  tintColor="#8B5CF6"
+                />
               </View>
             </Pressable>
           </View>
 
-          {/* AI Risk Analysis Wide Card */}
+          {/* Premium Full-Width AI Risk Analysis Banner */}
           <Pressable
             onPress={() => router.push('/safety-analysis')}
             style={({ pressed }) => [
-              styles.aiRiskCard,
-              { backgroundColor: colors.cardBg, borderColor: colors.border },
+              styles.aiRiskBanner,
+              styles.aiRiskBannerGradient,
+              {
+                paddingHorizontal: width < 640 ? 16 : 32,
+                paddingVertical: width < 640 ? 20 : 24,
+              },
               pressed && styles.pressed,
             ]}
           >
-            <View style={styles.aiRiskLeft}>
-              <View style={[styles.aiIconCircle, { backgroundColor: colors.primaryLight }]}>
-                <SymbolView name={"sparkles" as any} size={22} tintColor={colors.primary} />
+            <View style={styles.circuitLineDecor} />
+            <View style={styles.circuitLineDecorInner} />
+
+            <View style={[styles.aiRiskLeft, { gap: width < 640 ? 12 : 20 }]}>
+              <View style={[styles.aiIconContainer, {
+                width: width < 640 ? 44 : 60,
+                height: width < 640 ? 44 : 60,
+                borderRadius: width < 640 ? 22 : 30
+              }]}>
+                <SymbolView
+                  name={{
+                    ios: 'brain.head.profile',
+                    android: 'psychology_alt',
+                    web: 'psychology_alt',
+                  } as any}
+                  size={width < 640 ? 22 : 30}
+                  tintColor="#FFFFFF"
+                />
               </View>
+
               <View style={styles.aiRiskInfo}>
-                <Text style={[styles.aiRiskTitle, { color: colors.text }]}>
+                <Text style={[styles.aiRiskTitle, { fontSize: width < 640 ? 18 : 24 }]}>
                   AI Risk Analysis
                 </Text>
-                <Text style={[styles.aiRiskDescription, { color: colors.textSec }]}>
+                <Text style={[styles.aiRiskDescription, {
+                  fontSize: width < 640 ? 13 : 16,
+                  lineHeight: width < 640 ? 18 : 22
+                }]}>
                   Report a dangerous situation and let SafeHer AI analyze the risk.
                 </Text>
               </View>
             </View>
-            <View style={[styles.arrowCircleWide, { backgroundColor: colors.primaryLight }]}>
-              <SymbolView name={"chevron.right" as any} size={12} tintColor={colors.primary} />
+
+            <View style={[styles.arrowCircleAI, {
+              width: width < 640 ? 32 : 40,
+              height: width < 640 ? 32 : 40,
+              borderRadius: width < 640 ? 16 : 20,
+              marginLeft: width < 640 ? 10 : 16
+            }]}>
+              <SymbolView
+                name={{
+                  ios: 'chevron.right',
+                  android: 'chevron_right',
+                  web: 'chevron_right',
+                } as any}
+                size={16}
+                tintColor="#FFFFFF"
+              />
             </View>
           </Pressable>
 
@@ -243,194 +412,547 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#F8F5FF',
     justifyContent: 'center',
     flexDirection: 'row',
+    position: 'relative',
+  },
+  backgroundDecorativeLayer: {
+    ...StyleSheet.absoluteFill,
+    overflow: 'hidden',
+    zIndex: 0,
+  },
+  bubblePink: {
+    position: 'absolute',
+    top: -50,
+    right: -40,
+    width: 320,
+    height: 320,
+    borderRadius: 160,
+    backgroundColor: 'rgba(244, 114, 182, 0.1)',
+  },
+  bubblePurple: {
+    position: 'absolute',
+    top: 150,
+    left: -80,
+    width: 350,
+    height: 350,
+    borderRadius: 175,
+    backgroundColor: 'rgba(167, 139, 250, 0.1)',
+  },
+  bubbleBlue: {
+    position: 'absolute',
+    bottom: 200,
+    right: -60,
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+    backgroundColor: 'rgba(96, 165, 250, 0.08)',
+  },
+  bubbleLavender: {
+    position: 'absolute',
+    bottom: -80,
+    left: 10,
+    width: 320,
+    height: 320,
+    borderRadius: 160,
+    backgroundColor: 'rgba(192, 132, 252, 0.08)',
+  },
+  bubbleAmber: {
+    position: 'absolute',
+    top: 380,
+    right: 40,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: 'rgba(251, 191, 36, 0.06)',
+  },
+  curvedAccentLine: {
+    position: 'absolute',
+    top: '20%',
+    left: -150,
+    width: '150%',
+    height: 400,
+    borderWidth: 1,
+    borderColor: 'rgba(167, 139, 250, 0.1)',
+    borderRadius: 250,
+    transform: [{ rotate: '-10deg' }],
+  },
+  curvedAccentLine2: {
+    position: 'absolute',
+    top: '50%',
+    right: -150,
+    width: '140%',
+    height: 350,
+    borderWidth: 1,
+    borderColor: 'rgba(244, 114, 182, 0.1)',
+    borderRadius: 200,
+    transform: [{ rotate: '15deg' }],
+  },
+  curvedAccentLine3: {
+    position: 'absolute',
+    bottom: '5%',
+    left: -100,
+    width: '130%',
+    height: 300,
+    borderWidth: 1,
+    borderColor: 'rgba(96, 165, 250, 0.1)',
+    borderRadius: 200,
+    transform: [{ rotate: '-5deg' }],
+  },
+  decorStar: {
+    position: 'absolute',
+    fontSize: 16,
+    color: 'rgba(167, 139, 250, 0.4)',
+    fontWeight: '700',
+  },
+  decorPlus: {
+    position: 'absolute',
+    fontSize: 18,
+    color: 'rgba(167, 139, 250, 0.35)',
+    fontWeight: '600',
+  },
+  decorDot: {
+    position: 'absolute',
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   safeArea: {
     flex: 1,
-    maxWidth: MaxContentWidth,
+    width: '100%',
+    maxWidth: 1200,
+    zIndex: 1,
+  },
+  scrollView: {
+    flex: 1,
+    width: '100%',
   },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: BottomTabInset + 24,
-    gap: 24,
+    paddingTop: 16,
+    paddingBottom: BottomTabInset + 32,
+    gap: 32,
+  },
+  scrollContentWeb: {
+    paddingTop: 32,
+  },
+  navBarContainer: {
+    alignItems: 'center',
+    width: '100%',
+    zIndex: 10,
+  },
+  topNavBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255, 255, 255, 0.85)',
+    borderRadius: 40,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    width: '100%',
+    maxWidth: 1100,
+    shadowColor: '#A78BFA',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 4,
+    ...Platform.select({
+      web: {
+        backdropFilter: 'blur(10px)',
+      } as any,
+    }),
+  },
+  navLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingLeft: 4,
+  },
+  navShieldIcon: {
+    width: 32,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  navShieldHeart: {
+    position: 'absolute',
+    top: 9,
+  },
+  navLogoText: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#4338CA',
+    letterSpacing: -0.3,
+  },
+  navRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 30,
+    padding: 4,
+  },
+  navPill: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  navPillActive: {
+    backgroundColor: '#8B5CF6',
+    ...Platform.select({
+      web: {
+        backgroundImage: 'linear-gradient(135deg, #8B5CF6 0%, #A855F7 100%)',
+      } as any,
+    }),
+    shadowColor: '#8B5CF6',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  navPillActiveText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  navPillInactiveText: {
+    color: '#475569',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  navPillWithIcon: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   heroSection: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingTop: 16,
-    paddingBottom: 24,
+    paddingBottom: 8,
   },
   title: {
     textAlign: 'center',
-    fontWeight: '800',
-    fontSize: 32,
-    lineHeight: 40,
-    letterSpacing: -0.5,
-    marginTop: 18,
+    fontWeight: '900',
+    letterSpacing: -1.2,
+    color: '#312E81',
   },
+  titleGradient: Platform.select({
+    web: {
+      backgroundImage: 'linear-gradient(135deg, #4338CA 0%, #8B5CF6 45%, #EC4899 100%)',
+      WebkitBackgroundClip: 'text',
+      WebkitTextFillColor: 'transparent',
+    } as any,
+    default: {
+      color: '#312E81',
+    },
+  }) as any,
   subtitle: {
-    fontSize: 14,
     textAlign: 'center',
-    fontWeight: '500',
+    fontWeight: '600',
     marginTop: 6,
-  },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    gap: 16,
-  },
-  card: {
-    borderRadius: 24,
-    padding: 20,
-    minHeight: 220,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    shadowColor: '#7C3AED',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.02,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  cardHeader: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  iconCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cardBody: {
-    alignItems: 'center',
-    gap: 6,
-    marginVertical: 4,
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-  cardDesc: {
-    fontSize: 11,
-    lineHeight: 15,
-    fontWeight: '500',
-    textAlign: 'center',
-  },
-  arrowCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    alignSelf: 'center',
-  },
-  aiRiskCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 18,
-    borderRadius: 24,
-    borderWidth: 1,
-    shadowColor: '#7C3AED',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.02,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  aiRiskLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    gap: 14,
-  },
-  aiIconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  aiRiskInfo: {
-    flex: 1,
-    gap: 2,
-  },
-  aiRiskTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  aiRiskDescription: {
-    fontSize: 11,
-    lineHeight: 15,
-    fontWeight: '500',
-  },
-  arrowCircleWide: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statusCard: {
-    padding: 16,
-    borderRadius: 24,
-    borderWidth: 1,
-    gap: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  statusHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  statusIndicator: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  infoCard: {
-    padding: 16,
-    borderRadius: 24,
-    borderWidth: 1,
-    gap: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  pressed: {
-    opacity: 0.85,
-    transform: [{ scale: 0.98 }],
+    color: '#475569',
   },
   settingsButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 18,
-    paddingHorizontal: 20,
-    height: 46,
-    borderRadius: 14,
+    marginTop: 24,
+    width: 220,
+    height: 48,
+    borderRadius: 24,
     gap: 8,
-    shadowColor: '#7C3AED',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 3,
+    backgroundColor: '#6366F1',
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 5,
   },
+  settingsButtonGradient: Platform.select({
+    web: {
+      backgroundImage: 'linear-gradient(135deg, #3B82F6 0%, #6366F1 50%, #8B5CF6 100%)',
+    } as any,
+    default: {},
+  }),
   settingsButtonText: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  grid: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 24,
+    width: '100%',
+    maxWidth: 1100,
+    alignSelf: 'center',
+  },
+  card: {
+    borderRadius: 24,
+    paddingTop: 32,
+    paddingHorizontal: 20,
+    paddingBottom: 24,
+    height: 300,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(226, 232, 240, 0.8)',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#6366F1',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+    elevation: 4,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+
+  /* Bottom Layered Waves */
+  cardWaveOuter: {
+    position: 'absolute',
+    bottom: -20,
+    left: -20,
+    right: -20,
+    height: 80,
+    borderTopLeftRadius: 140,
+    borderTopRightRadius: 140,
+    zIndex: 0,
+  },
+  cardWaveInner: {
+    position: 'absolute',
+    bottom: -35,
+    left: -10,
+    right: -10,
+    height: 70,
+    borderTopLeftRadius: 160,
+    borderTopRightRadius: 160,
+    zIndex: 0,
+  },
+
+  /* SOS Waves & Accent */
+  cardSOS: {
+    borderColor: 'rgba(254, 202, 202, 0.6)',
+  },
+  cardWaveOuterSOS: {
+    backgroundColor: 'rgba(254, 202, 202, 0.3)',
+  },
+  cardWaveInnerSOS: {
+    backgroundColor: 'rgba(254, 226, 226, 0.6)',
+  },
+  iconContainerSOS: {
+    backgroundColor: '#FEE2E2',
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+  },
+  arrowCircleSOS: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.2)',
+  },
+
+  /* Live Location Waves & Accent */
+  cardLocation: {
+    borderColor: 'rgba(167, 243, 208, 0.6)',
+  },
+  cardWaveOuterLocation: {
+    backgroundColor: 'rgba(167, 243, 208, 0.3)',
+  },
+  cardWaveInnerLocation: {
+    backgroundColor: 'rgba(209, 250, 229, 0.6)',
+  },
+  iconContainerLocation: {
+    backgroundColor: '#D1FAE5',
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+  },
+  arrowCircleLocation: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.2)',
+  },
+
+  /* Safety Timer Waves & Accent */
+  cardTimer: {
+    borderColor: 'rgba(253, 230, 138, 0.6)',
+  },
+  cardWaveOuterTimer: {
+    backgroundColor: 'rgba(253, 230, 138, 0.3)',
+  },
+  cardWaveInnerTimer: {
+    backgroundColor: 'rgba(254, 243, 199, 0.6)',
+  },
+  iconContainerTimer: {
+    backgroundColor: '#FEF3C7',
+    shadowColor: '#F59E0B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+  },
+  arrowCircleTimer: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.2)',
+  },
+
+  /* Emergency Contacts Waves & Accent */
+  cardContacts: {
+    borderColor: 'rgba(221, 214, 254, 0.6)',
+  },
+  cardWaveOuterContacts: {
+    backgroundColor: 'rgba(221, 214, 254, 0.3)',
+  },
+  cardWaveInnerContacts: {
+    backgroundColor: 'rgba(237, 233, 254, 0.6)',
+  },
+  iconContainerContacts: {
+    backgroundColor: '#EDE9FE',
+    shadowColor: '#8B5CF6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+  },
+  arrowCircleContacts: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(139, 92, 246, 0.2)',
+  },
+
+  iconContainerCard: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1,
+    marginBottom: 8,
+  },
+  cardBody: {
+    alignItems: 'center',
+    gap: 8,
+    marginVertical: 4,
+    width: '100%',
+    zIndex: 1,
+  },
+  cardTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#1E1B4B',
+    letterSpacing: -0.2,
+    textAlign: 'center',
+  },
+  cardDesc: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '500',
+    color: '#64748B',
+    textAlign: 'center',
+    paddingHorizontal: 8,
+  },
+  arrowCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+    shadowColor: '#64748B',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+    marginTop: 4,
+  },
+
+  /* Full-Width AI Risk Analysis Banner */
+  aiRiskBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: 24,
+    backgroundColor: '#6366F1',
+    width: '100%',
+    maxWidth: 1100,
+    alignSelf: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    shadowColor: '#4338CA',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 6,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  aiRiskBannerGradient: Platform.select({
+    web: {
+      backgroundImage: 'linear-gradient(135deg, #6366F1 0%, #4338CA 50%, #8B5CF6 100%)',
+    } as any,
+    default: {},
+  }),
+  circuitLineDecor: {
+    position: 'absolute',
+    right: -40,
+    top: -40,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  circuitLineDecorInner: {
+    position: 'absolute',
+    right: -10,
+    top: -10,
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  aiRiskLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    zIndex: 1,
+  },
+  aiIconContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aiRiskInfo: {
+    flex: 1,
+    gap: 6,
+  },
+  aiRiskTitle: {
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.2,
+  },
+  aiRiskDescription: {
+    fontWeight: '500',
+    color: 'rgba(255, 255, 255, 0.9)',
+  },
+  arrowCircleAI: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1,
+  },
+  pressed: {
+    opacity: 0.85,
+    transform: [{ scale: 0.98 }],
   },
 });

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
     Alert,
     Linking,
+    Platform,
     Pressable,
     ScrollView,
     Share,
@@ -183,6 +184,78 @@ export default function SOSScreen() {
             console.log('SOS Sound Error:', error);
         }
     };
+
+    const handleSOSAlertDispatch = async () => {
+        try {
+            // 1. Get current GPS latitude and longitude using existing location functionality
+            let coords = liveLocation;
+            if (!coords) {
+                try {
+                    coords = await refreshLocation();
+                } catch (locErr) {
+                    console.log('Location fetch error during SOS alert:', locErr);
+                }
+            }
+
+            const lat = coords?.latitude;
+            const lon = coords?.longitude;
+
+            // 3. Create Google Maps location URL or fallback
+            const locationString = (lat !== undefined && lon !== undefined)
+                ? `https://www.google.com/maps?q=${lat},${lon}`
+                : 'Location unavailable';
+
+            // 2. Get all saved emergency contacts from existing storage
+            const saved = await AsyncStorage.getItem('emergencyContacts');
+            const contactsList: Contact[] = saved ? JSON.parse(saved) : [];
+
+            if (contactsList.length === 0) {
+                Alert.alert(
+                    'Emergency SOS',
+                    'No emergency contacts saved. Please add an emergency contact first.'
+                );
+                return;
+            }
+
+            // 4. Create SOS message matching required format
+            const sosMessage = `🚨 SafeHer AI SOS Alert!\nI may be in danger. Please contact me immediately.\n📍 My current location:\n${locationString}`;
+
+            // 5. Collect all saved contact phone numbers
+            const phoneNumbers = contactsList
+                .map((c) => c.phone.replace(/[^0-9+]/g, '').trim())
+                .filter(Boolean);
+
+            if (phoneNumbers.length > 0) {
+                const separator = Platform.OS === 'ios' ? '&' : '?';
+                // Comma-separated list for multiple recipients
+                const recipientParam = phoneNumbers.join(',');
+                const smsUrl = `sms:${recipientParam}${separator}body=${encodeURIComponent(sosMessage)}`;
+
+                try {
+                    await Linking.openURL(smsUrl);
+                } catch (err) {
+                    console.log('Error opening SMS with comma delimiter, trying semicolon:', err);
+                    const semicolonUrl = `sms:${phoneNumbers.join(';')}${separator}body=${encodeURIComponent(sosMessage)}`;
+                    try {
+                        await Linking.openURL(semicolonUrl);
+                    } catch (fallbackErr) {
+                        console.log('Error opening native SMS app:', fallbackErr);
+                        Alert.alert(
+                            'Emergency SOS Active',
+                            'Could not open SMS application. Please call 112 or share your location manually.'
+                        );
+                    }
+                }
+            }
+        } catch (error) {
+            console.log('Error dispatching SOS emergency alert:', error);
+            Alert.alert(
+                'Emergency SOS Active',
+                'SOS is active. Could not open SMS composer. Please dial 112 or use Share Location.'
+            );
+        }
+    };
+
     useEffect(() => {
         if (!isCounting) return;
 
@@ -192,37 +265,7 @@ export default function SOSScreen() {
                     setIsCounting(false);
                     setIsActivated(true);
                     void playSOSSound();
-
-                    void (async () => {
-                        try {
-                            const saved = await AsyncStorage.getItem('emergencyContacts');
-                            const contactsList: Contact[] = saved ? JSON.parse(saved) : [];
-                            if (contactsList.length === 0) {
-                                Alert.alert(
-                                    '🚨 SOS Activated',
-                                    'Emergency SOS has been activated! No emergency contacts configured. Please configure them in the Safety Center.'
-                                );
-                            } else {
-                                const contactDetails = contactsList.map((c) => `${c.name} (${c.phone})`).join(', ');
-                                const locationInfo = liveLocation
-                                    ? `\n\nLive Location link: ${liveLocation.googleMapsLink}`
-                                    : '';
-                                Alert.alert(
-                                    '🚨 SOS Activated',
-                                    `Emergency SOS has been activated. Alerts have been sent to your emergency contacts:\n\n${contactDetails}\n\n${locationInfo}`
-                                );
-                            }
-                        } catch (error) {
-                            console.log('Error notifying emergency contacts:', error);
-                            const fallbackLocationInfo = liveLocation
-                                ? `\n\nLive Location prepared: ${liveLocation.googleMapsLink}`
-                                : '';
-                            Alert.alert(
-                                '🚨 SOS Activated',
-                                `Emergency SOS has been activated. Your emergency contacts can now be alerted.${fallbackLocationInfo}`
-                            );
-                        }
-                    })();
+                    void handleSOSAlertDispatch();
 
                     return 0;
                 }
