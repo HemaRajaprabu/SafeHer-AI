@@ -2,10 +2,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Audio } from 'expo-av';
 import { useLocalSearchParams } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
     Alert,
     Linking,
+    NativeModules,
+    PermissionsAndroid,
     Platform,
     Pressable,
     ScrollView,
@@ -13,6 +15,8 @@ import {
     StyleSheet,
     View,
 } from 'react-native';
+
+const { SmsModule } = NativeModules;
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/hooks/use-auth';
@@ -34,6 +38,8 @@ export default function SOSScreen() {
     const [isCounting, setIsCounting] = useState(false);
     const [isActivated, setIsActivated] = useState(false);
     const [contacts, setContacts] = useState<Contact[]>([]);
+
+    const smsSentRef = useRef(false);
 
     const params = useLocalSearchParams();
     const { setVoiceSOSEnabled } = useVoiceSOS();
@@ -147,6 +153,31 @@ export default function SOSScreen() {
         }
     };
 
+    const requestSmsPermission = async () => {
+        if (Platform.OS !== 'android') return true;
+        try {
+            const hasPermission = await PermissionsAndroid.check(
+                PermissionsAndroid.PERMISSIONS.SEND_SMS
+            );
+            if (hasPermission) return true;
+
+            const status = await PermissionsAndroid.request(
+                PermissionsAndroid.PERMISSIONS.SEND_SMS,
+                {
+                    title: "SMS Permission Required",
+                    message: "SafeHer AI needs SMS permission to automatically send SOS alerts to your emergency contacts.",
+                    buttonNeutral: "Ask Me Later",
+                    buttonNegative: "Cancel",
+                    buttonPositive: "OK"
+                }
+            );
+            return status === PermissionsAndroid.RESULTS.GRANTED;
+        } catch (err) {
+            console.log('Error checking/requesting SMS permission:', err);
+            return false;
+        }
+    };
+
     useEffect(() => {
         const loadContacts = async () => {
             try {
@@ -159,6 +190,10 @@ export default function SOSScreen() {
             }
         };
         loadContacts();
+
+        if (Platform.OS === 'android') {
+            requestSmsPermission();
+        }
     }, []);
     const playSOSSound = async () => {
         try {
@@ -186,6 +221,12 @@ export default function SOSScreen() {
     };
 
     const handleSOSAlertDispatch = async () => {
+        if (smsSentRef.current) {
+            console.log('SMS already sent/attempted for this SOS session.');
+            return;
+        }
+        smsSentRef.current = true;
+
         try {
             // 1. Get current GPS latitude and longitude using existing location functionality
             let coords = liveLocation;
@@ -200,11 +241,6 @@ export default function SOSScreen() {
             const lat = coords?.latitude;
             const lon = coords?.longitude;
 
-            // 3. Create Google Maps location URL or fallback
-            const locationString = (lat !== undefined && lon !== undefined)
-                ? `https://www.google.com/maps?q=${lat},${lon}`
-                : 'Location unavailable';
-
             // 2. Get all saved emergency contacts from existing storage
             const saved = await AsyncStorage.getItem('emergencyContacts');
             const contactsList: Contact[] = saved ? JSON.parse(saved) : [];
@@ -212,38 +248,72 @@ export default function SOSScreen() {
             if (contactsList.length === 0) {
                 Alert.alert(
                     'Emergency SOS',
-                    'No emergency contacts saved. Please add an emergency contact first.'
+                    'No emergency contacts are saved. Please add an emergency contact to receive SOS alerts.'
                 );
                 return;
             }
 
-            // 4. Create SOS message matching required format
-            const sosMessage = `🚨 SafeHer AI SOS Alert!\nI may be in danger. Please contact me immediately.\n📍 My current location:\n${locationString}`;
+            // 3. Create SOS message matching required format (with double newlines)
+            let sosMessage = '';
+            if (lat !== undefined && lon !== undefined) {
+                sosMessage = `🚨 SafeHer AI SOS Alert!\n\nI may be in danger. Please contact me immediately.\n\n📍 My current location:\nhttps://www.google.com/maps?q=${lat},${lon}`;
+            } else {
+                sosMessage = `🚨 SafeHer AI SOS Alert!\n\nI may be in danger. Please contact me immediately.\n\n📍 My current location is temporarily unavailable.`;
+            }
 
-            // 5. Collect all saved contact phone numbers
-            const phoneNumbers = contactsList
-                .map((c) => c.phone.replace(/[^0-9+]/g, '').trim())
-                .filter(Boolean);
+            // 4. Send SMS
+            if (Platform.OS === 'android') {
+                const hasPermission = await requestSmsPermission();
+                if (!hasPermission) {
+                    Alert.alert(
+                        "Permission Denied",
+                        "Automatic SOS SMS permission is required. Please allow SMS permission in Settings."
+                    );
+                    return;
+                }
 
-            if (phoneNumbers.length > 0) {
-                const separator = Platform.OS === 'ios' ? '&' : '?';
-                // Comma-separated list for multiple recipients
-                const recipientParam = phoneNumbers.join(',');
-                const smsUrl = `sms:${recipientParam}${separator}body=${encodeURIComponent(sosMessage)}`;
-
-                try {
-                    await Linking.openURL(smsUrl);
-                } catch (err) {
-                    console.log('Error opening SMS with comma delimiter, trying semicolon:', err);
-                    const semicolonUrl = `sms:${phoneNumbers.join(';')}${separator}body=${encodeURIComponent(sosMessage)}`;
+                // Send SMS to EVERY saved contact automatically
+                let sendErrors = 0;
+                for (const contact of contactsList) {
+                    const cleanPhone = contact.phone.replace(/[^0-9+]/g, '').trim();
+                    if (!cleanPhone) continue;
                     try {
-                        await Linking.openURL(semicolonUrl);
-                    } catch (fallbackErr) {
-                        console.log('Error opening native SMS app:', fallbackErr);
-                        Alert.alert(
-                            'Emergency SOS Active',
-                            'Could not open SMS application. Please call 112 or share your location manually.'
-                        );
+                        await SmsModule.sendSms(cleanPhone, sosMessage);
+                        console.log(`Automatic SMS successfully sent to ${contact.name} (${cleanPhone})`);
+                    } catch (smsErr) {
+                        console.log(`Error sending automatic SMS to ${contact.name}:`, smsErr);
+                        sendErrors++;
+                    }
+                }
+
+                if (sendErrors > 0) {
+                    console.log(`Failed to automatically send SMS to ${sendErrors} contact(s).`);
+                }
+            } else {
+                // Fallback for iOS/Web: open SMS composer
+                const phoneNumbers = contactsList
+                    .map((c) => c.phone.replace(/[^0-9+]/g, '').trim())
+                    .filter(Boolean);
+
+                if (phoneNumbers.length > 0) {
+                    const separator = Platform.OS === 'ios' ? '&' : '?';
+                    const recipientParam = phoneNumbers.join(',');
+                    const smsUrl = `sms:${recipientParam}${separator}body=${encodeURIComponent(sosMessage)}`;
+
+                    try {
+                        await Linking.openURL(smsUrl);
+                    } catch (err) {
+                        console.log('Error opening SMS with comma delimiter, trying semicolon:', err);
+                        const semicolonUrl = `sms:${phoneNumbers.join(';')}${separator}body=${encodeURIComponent(sosMessage)}`;
+                        try {
+                            await Linking.openURL(semicolonUrl);
+                        } catch (fallbackErr) {
+                            console.log('Error opening native SMS app:', fallbackErr);
+                            Alert.alert(
+                                'Emergency SOS Active',
+                                'Could not open SMS application. Please call 112 or share your location manually.'
+                            );
+                        }
                     }
                 }
             }
@@ -280,6 +350,7 @@ export default function SOSScreen() {
         setCountdown(5);
         setIsCounting(true);
         setIsActivated(false);
+        smsSentRef.current = false;
     }, []);
 
     const cancelSOS = () => {

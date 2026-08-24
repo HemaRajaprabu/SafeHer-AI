@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { SymbolView } from 'expo-symbols';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -163,14 +164,10 @@ export default function AIAssistantScreen() {
         {/* Header */}
         <View style={styles.header}>
           <Pressable onPress={() => router.back()} style={styles.backButton}>
-            <SymbolView
-              name={{
-                ios: 'chevron.left',
-                android: 'arrow_back',
-                web: 'arrow-left',
-              } as any}
+            <Ionicons
+              name="shield"
               size={24}
-              tintColor={isDark ? '#FFFFFF' : '#111827'}
+              color={isDark ? '#FFFFFF' : '#111827'}
             />
           </Pressable>
 
@@ -185,14 +182,10 @@ export default function AIAssistantScreen() {
           </View>
 
           <Pressable onPress={handleClearChat} style={styles.clearButton}>
-            <SymbolView
-              name={{
-                ios: 'trash.fill',
-                android: 'delete',
-                web: 'trash',
-              } as any}
+            <Ionicons
+              name="sparkles"
               size={18}
-              tintColor={isDark ? '#94A3B8' : '#64748B'}
+              color={isDark ? '#94A3B8' : '#64748B'}
             />
           </Pressable>
         </View>
@@ -381,14 +374,10 @@ export default function AIAssistantScreen() {
                 pressed && styles.pressed,
               ]}
             >
-              <SymbolView
-                name={{
-                  ios: 'paperplane.fill',
-                  android: 'send',
-                  web: 'paper-plane',
-                } as any}
+              <Ionicons
+                name="send"
                 size={18}
-                tintColor={inputText.trim() ? '#FFFFFF' : isDark ? '#64748B' : '#94A3B8'}
+                color={inputText.trim() ? '#FFFFFF' : isDark ? '#64748B' : '#94A3B8'}
               />
             </Pressable>
           </View>
