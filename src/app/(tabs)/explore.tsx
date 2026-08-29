@@ -1,4 +1,4 @@
-import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 import { useState, useCallback } from 'react';
@@ -383,7 +383,7 @@ const styles = StyleSheet.create({
 
   content: {
     paddingHorizontal: Spacing.four,
-    paddingTop: Spacing.three,
+    paddingTop: Platform.OS === 'web' ? 96 : Spacing.three,
     paddingBottom: BottomTabInset + Spacing.five,
     gap: 16,
   },
