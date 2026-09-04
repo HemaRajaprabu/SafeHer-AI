@@ -97,18 +97,6 @@ export default function HomeScreen() {
                 <Pressable style={[styles.navPill, isSmallMobile && { paddingHorizontal: 8, paddingVertical: 6 }]}>
                   <Text style={[styles.navPillInactiveText, isSmallMobile && { fontSize: 11 }]}>Explore</Text>
                 </Pressable>
-                <Pressable style={[styles.navPill, styles.navPillWithIcon, isSmallMobile && { paddingHorizontal: 8, paddingVertical: 6 }]}>
-                  <Text style={[styles.navPillInactiveText, isSmallMobile && { fontSize: 11 }]}>Docs</Text>
-                  <SymbolView
-                    name={{
-                      ios: 'link',
-                      android: 'link',
-                      web: 'link',
-                    } as any}
-                    size={isSmallMobile ? 10 : 12}
-                    tintColor="#475569"
-                  />
-                </Pressable>
               </View>
             </View>
           </View>
@@ -272,9 +260,9 @@ export default function HomeScreen() {
               </View>
 
               <View style={styles.cardBody}>
-                <Text style={styles.cardTitle}>Safety Timer</Text>
+                <Text style={styles.cardTitle}>AI Safety Check-In</Text>
                 <Text style={styles.cardDesc}>
-                  {"Set a safety timer and get alerted if you don't check-in"}
+                  {"Start a safety check-in when traveling alone"}
                 </Text>
               </View>
 

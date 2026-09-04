@@ -229,7 +229,7 @@ export default function ExploreScreen() {
 
               <View style={styles.cardContent}>
                 <ThemedText style={styles.cardTitle}>
-                  Safety Timer
+                  AI Safety Check-In
                 </ThemedText>
 
                 <ThemedText
@@ -237,7 +237,7 @@ export default function ExploreScreen() {
                   themeColor="textSecondary"
                   numberOfLines={1}
                 >
-                  Automatic safety check
+                  Timed AI safety check-in
                 </ThemedText>
               </View>
             </Pressable>
