@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -160,6 +161,35 @@ export default function EmergencyContactsScreen() {
     );
   };
 
+  const callContact = async (contact: Contact) => {
+    const rawPhone = contact.phone || '';
+    const cleanPhone = rawPhone.replace(/[^0-9+*#]/g, '').trim();
+
+    if (!cleanPhone) {
+      Alert.alert('Invalid Phone Number', 'This contact does not have a valid phone number to call.');
+      return;
+    }
+
+    const telUrl = `tel:${cleanPhone}`;
+    try {
+      const supported = await Linking.canOpenURL(telUrl);
+      if (supported) {
+        await Linking.openURL(telUrl);
+      } else {
+        Alert.alert(
+          'Unable to make call',
+          'Phone calling is not available on this device.'
+        );
+      }
+    } catch (err) {
+      console.log('Error opening phone dialer:', err);
+      Alert.alert(
+        'Unable to make call',
+        'Phone calling is not available on this device.'
+      );
+    }
+  };
+
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
@@ -260,23 +290,46 @@ export default function EmergencyContactsScreen() {
                         </ThemedText>
                       )}
                     </View>
-                    <Pressable
-                      onPress={() => deleteContact(contact.id)}
-                      style={({ pressed }) => [
-                        styles.deleteButton,
-                        pressed && styles.pressed,
-                      ]}
-                    >
-                      <SymbolView
-                        name={{
-                          ios: 'trash.fill',
-                          android: 'delete',
-                          web: 'delete',
-                        } as any}
-                        size={20}
-                        tintColor="#EF4444"
-                      />
-                    </Pressable>
+                    <View style={styles.contactActions}>
+                      <Pressable
+                        onPress={() => callContact(contact)}
+                        style={({ pressed }) => [
+                          styles.callButton,
+                          pressed && styles.pressed,
+                        ]}
+                      >
+                        <SymbolView
+                          name={{
+                            ios: 'phone.fill',
+                            android: 'phone',
+                            web: 'phone',
+                          } as any}
+                          size={14}
+                          tintColor="#15803D"
+                        />
+                        <ThemedText style={styles.callButtonText}>
+                          Call
+                        </ThemedText>
+                      </Pressable>
+
+                      <Pressable
+                        onPress={() => deleteContact(contact.id)}
+                        style={({ pressed }) => [
+                          styles.deleteButton,
+                          pressed && styles.pressed,
+                        ]}
+                      >
+                        <SymbolView
+                          name={{
+                            ios: 'trash.fill',
+                            android: 'delete',
+                            web: 'delete',
+                          } as any}
+                          size={20}
+                          tintColor="#EF4444"
+                        />
+                      </Pressable>
+                    </View>
                   </View>
                 ))
               )}
@@ -475,6 +528,27 @@ const styles = StyleSheet.create({
   },
   contactPhone: {
     fontSize: 13,
+  },
+  contactActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  callButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+  },
+  callButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#15803D',
   },
   deleteButton: {
     width: 40,
