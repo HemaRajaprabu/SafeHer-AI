@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Audio } from 'expo-av';
-import { useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -15,17 +15,16 @@ import {
     StyleSheet,
     View,
 } from 'react-native';
-
-const { SmsModule } = NativeModules;
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ThemedText } from '@/components/themed-text';
+import { ThemedView } from '@/components/themed-view';
 import { useAuth } from '@/hooks/use-auth';
 import { useLocation } from '@/hooks/use-location';
 import { useVoiceSOS } from '@/hooks/voice-sos-provider';
 import { supabase } from '@/utils/supabase';
 
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
+const { SmsModule } = NativeModules;
 
 interface Contact {
     id: string;
@@ -33,11 +32,14 @@ interface Contact {
     phone: string;
 }
 
+type NotificationStatus = 'idle' | 'sending' | 'notified' | 'composer_opened' | 'failed' | 'no_contacts';
+
 export default function SOSScreen() {
     const [countdown, setCountdown] = useState(5);
     const [isCounting, setIsCounting] = useState(false);
     const [isActivated, setIsActivated] = useState(false);
     const [contacts, setContacts] = useState<Contact[]>([]);
+    const [notificationStatus, setNotificationStatus] = useState<NotificationStatus>('idle');
 
     const smsSentRef = useRef(false);
 
@@ -178,23 +180,31 @@ export default function SOSScreen() {
         }
     };
 
-    useEffect(() => {
-        const loadContacts = async () => {
-            try {
-                const saved = await AsyncStorage.getItem('emergencyContacts');
-                if (saved !== null) {
-                    setContacts(JSON.parse(saved));
-                }
-            } catch (error) {
-                console.log('Error loading contacts:', error);
+    const loadContacts = useCallback(async () => {
+        try {
+            const saved = await AsyncStorage.getItem('emergencyContacts');
+            if (saved !== null) {
+                setContacts(JSON.parse(saved));
+            } else {
+                setContacts([]);
             }
-        };
-        loadContacts();
+        } catch (error) {
+            console.log('Error loading contacts:', error);
+        }
+    }, []);
 
+    useFocusEffect(
+        useCallback(() => {
+            loadContacts();
+        }, [loadContacts])
+    );
+
+    useEffect(() => {
         if (Platform.OS === 'android') {
             requestSmsPermission();
         }
     }, []);
+
     const playSOSSound = async () => {
         try {
             await Audio.setAudioModeAsync({
@@ -220,15 +230,16 @@ export default function SOSScreen() {
         }
     };
 
-    const handleSOSAlertDispatch = async () => {
+    const handleSOSAlertDispatch = useCallback(async () => {
         if (smsSentRef.current) {
-            console.log('SMS already sent/attempted for this SOS session.');
+            console.log('Emergency SMS already sent/attempted for this SOS session.');
             return;
         }
         smsSentRef.current = true;
+        setNotificationStatus('sending');
 
         try {
-            // 1. Get current GPS latitude and longitude using existing location functionality
+            // 1. Get current GPS location using existing location functionality
             let coords = liveLocation;
             if (!coords) {
                 try {
@@ -241,11 +252,12 @@ export default function SOSScreen() {
             const lat = coords?.latitude;
             const lon = coords?.longitude;
 
-            // 2. Get all saved emergency contacts from existing storage
+            // 2. Get saved emergency contacts from existing storage
             const saved = await AsyncStorage.getItem('emergencyContacts');
             const contactsList: Contact[] = saved ? JSON.parse(saved) : [];
 
             if (contactsList.length === 0) {
+                setNotificationStatus('no_contacts');
                 Alert.alert(
                     'Emergency SOS',
                     'No emergency contacts are saved. Please add an emergency contact to receive SOS alerts.'
@@ -253,115 +265,136 @@ export default function SOSScreen() {
                 return;
             }
 
-            // 3. Create SOS message matching required format (with double newlines)
+            // 3. Generate emergency message matching required format
             let sosMessage = '';
             if (lat !== undefined && lon !== undefined) {
-                sosMessage = `🚨 SafeHer AI SOS Alert!\n\nI may be in danger. Please contact me immediately.\n\n📍 My current location:\nhttps://www.google.com/maps?q=${lat},${lon}`;
+                sosMessage = `⚠️ SafeHer AI Emergency Alert\n\nI may be at risk and need help.\n\nMy current location:\nhttps://maps.google.com/?q=${lat},${lon}\n\nPlease contact me immediately.`;
             } else {
-                sosMessage = `🚨 SafeHer AI SOS Alert!\n\nI may be in danger. Please contact me immediately.\n\n📍 My current location is temporarily unavailable.`;
+                sosMessage = `⚠️ SafeHer AI Emergency Alert\n\nI may be at risk and need help.\n\nMy current location:\nLocation temporarily unavailable.\n\nPlease contact me immediately.`;
             }
 
-            // 4. Send SMS
-            if (Platform.OS === 'android') {
+            // 4. Send SMS to configured emergency contacts
+            const canUseNativeSms =
+                Platform.OS === 'android' &&
+                NativeModules.SmsModule &&
+                typeof NativeModules.SmsModule.sendSms === 'function';
+
+            if (canUseNativeSms) {
                 const hasPermission = await requestSmsPermission();
-                if (!hasPermission) {
-                    Alert.alert(
-                        "Permission Denied",
-                        "Automatic SOS SMS permission is required. Please allow SMS permission in Settings."
-                    );
-                    return;
-                }
-
-                // Send SMS to EVERY saved contact automatically
-                let sendErrors = 0;
-                for (const contact of contactsList) {
-                    const cleanPhone = contact.phone.replace(/[^0-9+]/g, '').trim();
-                    if (!cleanPhone) continue;
-                    try {
-                        await SmsModule.sendSms(cleanPhone, sosMessage);
-                        console.log(`Automatic SMS successfully sent to ${contact.name} (${cleanPhone})`);
-                    } catch (smsErr) {
-                        console.log(`Error sending automatic SMS to ${contact.name}:`, smsErr);
-                        sendErrors++;
-                    }
-                }
-
-                if (sendErrors > 0) {
-                    console.log(`Failed to automatically send SMS to ${sendErrors} contact(s).`);
-                }
-            } else {
-                // Fallback for iOS/Web: open SMS composer
-                const phoneNumbers = contactsList
-                    .map((c) => c.phone.replace(/[^0-9+]/g, '').trim())
-                    .filter(Boolean);
-
-                if (phoneNumbers.length > 0) {
-                    const separator = Platform.OS === 'ios' ? '&' : '?';
-                    const recipientParam = phoneNumbers.join(',');
-                    const smsUrl = `sms:${recipientParam}${separator}body=${encodeURIComponent(sosMessage)}`;
-
-                    try {
-                        await Linking.openURL(smsUrl);
-                    } catch (err) {
-                        console.log('Error opening SMS with comma delimiter, trying semicolon:', err);
-                        const semicolonUrl = `sms:${phoneNumbers.join(';')}${separator}body=${encodeURIComponent(sosMessage)}`;
+                if (hasPermission) {
+                    let sentCount = 0;
+                    for (const contact of contactsList) {
+                        const cleanPhone = contact.phone.replace(/[^0-9+]/g, '').trim();
+                        if (!cleanPhone) continue;
                         try {
-                            await Linking.openURL(semicolonUrl);
-                        } catch (fallbackErr) {
-                            console.log('Error opening native SMS app:', fallbackErr);
-                            Alert.alert(
-                                'Emergency SOS Active',
-                                'Could not open SMS application. Please call 112 or share your location manually.'
-                            );
+                            await SmsModule.sendSms(cleanPhone, sosMessage);
+                            sentCount++;
+                            console.log(`Direct automatic SMS sent to ${contact.name} (${cleanPhone})`);
+                        } catch (smsErr) {
+                            console.log(`Error sending automatic SMS to ${contact.name}:`, smsErr);
                         }
                     }
+
+                    if (sentCount > 0) {
+                        setNotificationStatus('notified');
+                        return;
+                    }
                 }
             }
-        } catch (error) {
-            console.log('Error dispatching SOS emergency alert:', error);
+
+            // Fallback for iOS/Web/Expo Go or if direct SMS failed/permission denied: open SMS composer
+            const phoneNumbers = contactsList
+                .map((c) => c.phone.replace(/[^0-9+]/g, '').trim())
+                .filter(Boolean);
+
+            if (phoneNumbers.length > 0) {
+                const separator = Platform.OS === 'ios' ? '&' : '?';
+                const recipientParam = phoneNumbers.join(',');
+                const smsUrl = `sms:${recipientParam}${separator}body=${encodeURIComponent(sosMessage)}`;
+
+                try {
+                    const supported = await Linking.canOpenURL(smsUrl);
+                    if (supported) {
+                        await Linking.openURL(smsUrl);
+                        setNotificationStatus('composer_opened');
+                        return;
+                    }
+                } catch (err) {
+                    console.log('Error opening SMS with comma delimiter, trying semicolon:', err);
+                    try {
+                        const semicolonUrl = `sms:${phoneNumbers.join(';')}${separator}body=${encodeURIComponent(sosMessage)}`;
+                        await Linking.openURL(semicolonUrl);
+                        setNotificationStatus('composer_opened');
+                        return;
+                    } catch (fallbackErr) {
+                        console.log('Error opening native SMS composer fallback:', fallbackErr);
+                    }
+                }
+            }
+
+            setNotificationStatus('failed');
             Alert.alert(
                 'Emergency SOS Active',
-                'SOS is active. Could not open SMS composer. Please dial 112 or use Share Location.'
+                'Unable to notify emergency contacts. Please use Emergency Services.'
+            );
+        } catch (error) {
+            console.log('Error dispatching SOS emergency alert:', error);
+            setNotificationStatus('failed');
+            Alert.alert(
+                'Emergency SOS Active',
+                'Unable to notify emergency contacts. Please use Emergency Services.'
             );
         }
-    };
+    }, [liveLocation, refreshLocation]);
 
+    // Countdown interval
     useEffect(() => {
         if (!isCounting) return;
 
-        const timer = setTimeout(() => {
+        const timer = setInterval(() => {
             setCountdown((previous) => {
                 if (previous <= 1) {
+                    clearInterval(timer);
                     setIsCounting(false);
                     setIsActivated(true);
-                    void playSOSSound();
-                    void handleSOSAlertDispatch();
-
                     return 0;
                 }
                 return previous - 1;
             });
         }, 1000);
 
-        return () => clearTimeout(timer);
-    }, [isCounting, liveLocation]);
+        return () => clearInterval(timer);
+    }, [isCounting]);
+
+    // Activation trigger - runs once when isActivated becomes true
+    useEffect(() => {
+        if (isActivated && !smsSentRef.current) {
+            void playSOSSound();
+            void handleSOSAlertDispatch();
+        }
+    }, [isActivated, handleSOSAlertDispatch]);
 
     const startSOS = useCallback(() => {
         setCountdown(5);
         setIsCounting(true);
         setIsActivated(false);
         smsSentRef.current = false;
+        setNotificationStatus('idle');
     }, []);
 
     const cancelSOS = () => {
         setIsCounting(false);
         setCountdown(5);
+        smsSentRef.current = false;
+        setNotificationStatus('idle');
     };
 
     const resetSOS = () => {
         setIsActivated(false);
         setIsCounting(false);
         setCountdown(5);
+        smsSentRef.current = false;
+        setNotificationStatus('idle');
     };
 
     // Auto-start SOS if redirected via Voice Trigger
@@ -516,7 +549,17 @@ export default function SOSScreen() {
                             </ThemedText>
 
                             <ThemedText style={styles.activatedText}>
-                                Your emergency response has been triggered.
+                                {notificationStatus === 'notified'
+                                    ? 'Emergency contacts notified'
+                                    : notificationStatus === 'composer_opened'
+                                        ? 'SMS composer opened'
+                                        : notificationStatus === 'failed'
+                                            ? 'Unable to notify emergency contacts. Please use Emergency Services.'
+                                            : notificationStatus === 'no_contacts'
+                                                ? 'No emergency contacts configured.'
+                                                : notificationStatus === 'sending'
+                                                    ? 'Notifying emergency contacts...'
+                                                    : 'Your emergency response has been triggered.'}
                             </ThemedText>
                         </View>
                     )}
@@ -569,9 +612,9 @@ export default function SOSScreen() {
                             <View style={styles.locationIcon}>
                                 <SymbolView
                                     name={{
-                                        ios: 'location.fill',
-                                        android: 'location-on',
-                                        web: 'location',
+                                        ios: 'mappin.and.ellipse',
+                                        android: 'location_on',
+                                        web: 'location_on',
                                     } as any}
                                     size={22}
                                     tintColor="#FFFFFF"
@@ -596,13 +639,19 @@ export default function SOSScreen() {
                         </Pressable>
 
                         {/* Contacts */}
-                        <View style={styles.actionButton}>
+                        <Pressable
+                            onPress={() => router.push('/emergency-contacts')}
+                            style={({ pressed }) => [
+                                styles.actionButton,
+                                pressed && styles.pressed,
+                            ]}
+                        >
                             <View style={styles.contactIcon}>
                                 <SymbolView
                                     name={{
                                         ios: 'person.2.fill',
-                                        android: 'group',
-                                        web: 'users',
+                                        android: 'contacts',
+                                        web: 'contacts',
                                     } as any}
                                     size={22}
                                     tintColor="#FFFFFF"
@@ -619,8 +668,22 @@ export default function SOSScreen() {
                                         ? 'No emergency contacts configured.'
                                         : `${contacts.length} contact(s) configured: ${contacts.map((c) => c.name).join(', ')}`}
                                 </ThemedText>
+
+                                <ThemedText style={styles.actionPrompt}>
+                                    Tap to manage contacts
+                                </ThemedText>
                             </View>
-                        </View>
+
+                            <SymbolView
+                                name={{
+                                    ios: 'chevron.right',
+                                    android: 'chevron_right',
+                                    web: 'chevron-right',
+                                } as any}
+                                size={18}
+                                tintColor="#94A3B8"
+                            />
+                        </Pressable>
                     </View>
 
                     {/* Bottom Button */}
@@ -863,6 +926,13 @@ const styles = StyleSheet.create({
     actionDescription: {
         fontSize: 12,
         color: '#64748B',
+        marginTop: 3,
+    },
+
+    actionPrompt: {
+        fontSize: 11,
+        color: '#7C3AED',
+        fontWeight: '600',
         marginTop: 3,
     },
 
