@@ -673,16 +673,6 @@ export default function SOSScreen() {
                                     Tap to manage contacts
                                 </ThemedText>
                             </View>
-
-                            <SymbolView
-                                name={{
-                                    ios: 'chevron.right',
-                                    android: 'chevron_right',
-                                    web: 'chevron-right',
-                                } as any}
-                                size={18}
-                                tintColor="#94A3B8"
-                            />
                         </Pressable>
                     </View>
 
