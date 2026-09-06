@@ -137,13 +137,32 @@ export async function getLocalityDetails(
       if (res.ok) {
         const data = await res.json();
         const addr = data.address || {};
-        locality = addr.suburb || addr.neighbourhood || addr.road || addr.village || undefined;
-        city = addr.city || addr.town || addr.municipality || addr.state_district || undefined;
+        // Hierarchy prioritizing village / hamlet / suburb / neighbourhood / town / county over road
+        // Avoids road names (e.g. "Kottanathampatti - Kodukkampatti Road") becoming the primary query term
+        locality =
+          addr.village ||
+          addr.hamlet ||
+          addr.suburb ||
+          addr.neighbourhood ||
+          addr.isolated_dwelling ||
+          addr.town ||
+          addr.county ||
+          undefined;
+
+        city =
+          addr.city ||
+          (addr.town && addr.town !== locality ? addr.town : undefined) ||
+          addr.municipality ||
+          (addr.state_district && addr.state_district !== locality ? addr.state_district : undefined) ||
+          undefined;
+
         district = addr.state_district || addr.county || undefined;
         region = addr.state || undefined;
         countryCode = addr.country_code ? addr.country_code.toUpperCase() : undefined;
 
-        const parts = [locality, city, region].filter(Boolean) as string[];
+        // For human-readable areaName display: show locality/road, city, and region
+        const displayLocality = locality || addr.road;
+        const parts = [displayLocality, city, region].filter(Boolean) as string[];
         if (parts.length > 0) {
           areaName = parts.join(', ');
         }
@@ -387,28 +406,58 @@ export async function fetchRegionalSafetyNews(
   const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=${hl}&gl=${gl}&ceid=${ceid}`;
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 sec timeout
+    let rawItems: RawRssItem[] = [];
 
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        Accept: 'application/rss+xml, application/xml, text/xml, */*',
-      },
-    });
-    clearTimeout(timeoutId);
+    if (Platform.OS === 'web') {
+      // In Web, call the first-party serverless API route to eliminate browser CORS restrictions
+      const apiUrl = `/api/safety-news?q=${encodeURIComponent(query)}&country=${encodeURIComponent(countryCode)}`;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 sec timeout
 
-    if (!response.ok) {
-      return {
-        articles: [],
-        queryUsed: query,
-        fetchedSuccessfully: false,
-        errorMessage: 'Recent safety news is temporarily unavailable.',
-      };
+      const response = await fetch(apiUrl, {
+        signal: controller.signal,
+        headers: {
+          Accept: 'application/json',
+        },
+      });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        return {
+          articles: [],
+          queryUsed: query,
+          fetchedSuccessfully: false,
+          errorMessage: 'Recent safety news is temporarily unavailable.',
+        };
+      }
+
+      const json = await response.json();
+      rawItems = (json.articles || []) as RawRssItem[];
+    } else {
+      // In Native iOS/Android, fetch directly from Google News RSS (no browser CORS)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 sec timeout
+
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          Accept: 'application/rss+xml, application/xml, text/xml, */*',
+        },
+      });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        return {
+          articles: [],
+          queryUsed: query,
+          fetchedSuccessfully: false,
+          errorMessage: 'Recent safety news is temporarily unavailable.',
+        };
+      }
+
+      const xmlText = await response.text();
+      rawItems = parseGoogleNewsRss(xmlText);
     }
-
-    const xmlText = await response.text();
-    const rawItems = parseGoogleNewsRss(xmlText);
 
     const now = Date.now();
     const maxAgeMs = 8 * 24 * 60 * 60 * 1000; // 8-day threshold for timezone buffer

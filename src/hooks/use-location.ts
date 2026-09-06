@@ -143,10 +143,19 @@ export function useLocation() {
                 return null;
             }
 
-            // Get position
-            const pos = await Location.getCurrentPositionAsync({
-                accuracy: Location.Accuracy.Balanced,
-            });
+            // Get fresh high-accuracy position (enables GPS hardware chip)
+            const locationOptions: Location.LocationOptions & { maximumAge?: number; timeout?: number } = {
+                accuracy: Location.Accuracy.High,
+                mayShowUserSettingsDialog: true,
+                ...(Platform.OS === 'web'
+                    ? {
+                        maximumAge: 0,
+                        timeout: 15000,
+                    }
+                    : {}),
+            };
+
+            const pos = await Location.getCurrentPositionAsync(locationOptions);
 
             if (pos && pos.coords) {
                 const { latitude, longitude, accuracy } = pos.coords;
@@ -167,9 +176,12 @@ export function useLocation() {
         } catch (err: any) {
             console.log('Error getting location:', err);
             
-            // Fallback to last known location if possible
+            // Fallback to recent last known location only if fresh
             try {
-                const lastKnown = await Location.getLastKnownPositionAsync();
+                const lastKnown = await Location.getLastKnownPositionAsync({
+                    maxAge: 30000, // within 30 seconds
+                    requiredAccuracy: 100, // within 100 meters
+                });
                 if (lastKnown && lastKnown.coords) {
                     const { latitude, longitude, accuracy } = lastKnown.coords;
                     const data: LocationData = {
@@ -261,9 +273,10 @@ export function useLocation() {
 
             sharedSubscription = await Location.watchPositionAsync(
                 {
-                    accuracy: Location.Accuracy.Balanced,
-                    timeInterval: 10000, // Update every 10 seconds to save battery
-                    distanceInterval: 10, // Or every 10 meters
+                    accuracy: Location.Accuracy.High,
+                    timeInterval: 5000,
+                    distanceInterval: 5,
+                    mayShowUserSettingsDialog: true,
                 },
                 (pos) => {
                     if (pos && pos.coords) {
@@ -400,6 +413,7 @@ export function useLocation() {
         sharedStateSetters.add(stateSetter);
 
         if (!sharedLocation) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             fetchLocation();
         }
 
