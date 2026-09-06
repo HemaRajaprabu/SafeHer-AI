@@ -315,6 +315,52 @@ export default function ExploreScreen() {
             <ThemedText style={[styles.arrow, { color: isDark ? '#C084FC' : '#7C3AED' }]}>›</ThemedText>
           </Pressable>
 
+          {/* AI Safety Zone */}
+          <Pressable
+            onPress={() => router.push('/ai-safety-zone')}
+            style={({ pressed }) => [
+              styles.aiCard,
+              { 
+                backgroundColor: isDark ? '#022c22' : '#ECFDF5',
+                borderColor: isDark ? '#065f46' : '#A7F3D0',
+                borderWidth: 1,
+                shadowColor: isDark ? '#000000' : '#10B981',
+                shadowOpacity: isDark ? 0.15 : 0.05,
+                shadowOffset: { width: 0, height: 2 },
+                shadowRadius: 6,
+                elevation: 3,
+              },
+              pressed && styles.pressed,
+            ]}
+          >
+            <View style={[styles.aiIcon, { backgroundColor: '#059669' }]}>
+              <SymbolView
+                name={{
+                  ios: 'shield.checkerboard',
+                  android: 'security',
+                  web: 'security',
+                } as any}
+                size={24}
+                tintColor="#FFFFFF"
+              />
+            </View>
+
+            <View style={styles.aiContent}>
+              <ThemedText style={styles.aiTitle}>
+                AI Safety Zone
+              </ThemedText>
+
+              <ThemedText
+                style={styles.cardSubtitle}
+                themeColor="textSecondary"
+              >
+                Check safety context & recommendations for your area.
+              </ThemedText>
+            </View>
+
+            <ThemedText style={[styles.arrow, { color: isDark ? '#34D399' : '#059669' }]}>›</ThemedText>
+          </Pressable>
+
           {/* Safety Status */}
           <View
             style={[

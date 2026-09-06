@@ -83,6 +83,13 @@ function AuthOrApp() {
           headerShown: false,
         }}
       />
+
+      <Stack.Screen
+        name="ai-safety-zone"
+        options={{
+          headerShown: false,
+        }}
+      />
     </Stack>
   );
 }
