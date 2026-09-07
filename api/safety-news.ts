@@ -133,9 +133,10 @@ export default async function handler(req: any, res: any) {
       });
     }
 
-    const hl = countryCode === 'US' ? 'en-US' : countryCode === 'GB' ? 'en-GB' : 'en-IN';
-    const gl = countryCode;
-    const ceid = `${countryCode}:en`;
+    const country = countryCode.toUpperCase();
+    const hl = country === 'US' ? 'en-US' : country === 'GB' ? 'en-GB' : country === 'CA' ? 'en-CA' : country === 'AU' ? 'en-AU' : country === 'IN' ? 'en-IN' : `en-${country}`;
+    const gl = country;
+    const ceid = `${country}:en`;
     const googleNewsUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=${hl}&gl=${gl}&ceid=${ceid}`;
 
     const controller = new AbortController();
