@@ -19,6 +19,7 @@ export interface NearbyLightingInfo {
   litCount: number;
   unlitCount: number;
   summary: string;
+  fetchedSuccessfully?: boolean;
 }
 
 export interface SafetyInfrastructureData {
@@ -300,10 +301,18 @@ export async function getAreaName(latitude: number, longitude: number): Promise<
 export function buildNewsSearchQuery(localityDetails: LocalityDetails): string | null {
   const { locality, city, district, region } = localityDetails;
 
-  const loc = locality?.trim();
-  const cit = city?.trim();
-  const dist = district?.trim();
-  const reg = region?.trim();
+  // Clean administrative suffixes like "District", "County", "Borough", "Mandal", "Taluk", "Tehsil"
+  // e.g. "Madurai District" -> "Madurai", "Travis County" -> "Travis"
+  const cleanAdmin = (str?: string) => {
+    if (!str) return undefined;
+    const cleaned = str.replace(/\b(district|county|borough|mandal|taluk|tehsil|subdivision)\b/gi, '').trim();
+    return cleaned.length > 0 ? cleaned : str.trim();
+  };
+
+  const loc = cleanAdmin(locality);
+  const cit = cleanAdmin(city);
+  const dist = cleanAdmin(district);
+  const reg = cleanAdmin(region);
 
   // Local settlement term (village, hamlet, suburb, neighbourhood, town)
   const localName = loc || (cit && cit !== dist ? cit : undefined);
@@ -438,12 +447,15 @@ export function isSafetyRelevant(title: string, snippet?: string): boolean {
     'rescue', 'fire', 'accident', 'collision', 'crash', 'mishap',
     'assault', 'harassment', 'eve teasing', 'eve-teasing', 'theft', 'robbery', 'burglary',
     'snatching', 'crime', 'arrest', 'arrested', 'nabbed', 'apprehended', 'bust',
+    'held', 'detained', 'booked', 'custody', 'remand', 'jailed', 'convicted', 'accused',
     'investigation', 'fir', 'helpline', 'women safety', 'safe zone', 'women',
     'missing', 'abduction', 'kidnap', 'found dead', 'homicide', 'murder',
+    'attack', 'attacked', 'weapon', 'stab', 'stabbed', 'injured', 'death', 'dead', 'killed', 'fatal',
+    'sexual', 'torture', 'abuse', 'molest', 'molestation', 'rape', 'violence', 'suicide', 'rammed',
     'flood', 'waterlogging', 'landslide', 'disaster', 'shelter', 'hazard',
     'storm', 'cyclone', 'tornado', 'earthquake', 'tsunami',
     'vigilance', 'security', 'law and order', 'public safety', 'emergency services',
-    'ambulance', 'hospitalized', 'injured', 'casualty',
+    'ambulance', 'hospitalized', 'casualty',
   ];
 
   return safetyKeywords.some(keyword => text.includes(keyword));
@@ -512,6 +524,7 @@ export async function fetchRegionalSafetyNews(
         signal: controller.signal,
         headers: {
           Accept: 'application/rss+xml, application/xml, text/xml, */*',
+          'User-Agent': 'SafeHer-AI/1.0 (Safety Zone Service)',
         },
       });
       clearTimeout(timeoutId);
@@ -655,11 +668,11 @@ export async function fetchNearbySafetyInfrastructure(
   const endpoints = [
     'https://overpass-api.de/api/interpreter',
     'https://lz4.overpass-api.de/api/interpreter',
-    'https://overpass.kumi.systems/api/interpreter',
   ];
 
   let rawData: any = null;
   let fetchError: string | null = null;
+  let lightingQueried = false;
 
   // 1. Try comprehensive query across available endpoints
   const comprehensiveQuery = buildOverpassQuery(latitude, longitude, searchRadiusMeters);
@@ -670,7 +683,11 @@ export async function fetchNearbySafetyInfrastructure(
 
       const response = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json, */*',
+          'User-Agent': 'SafeHer-AI/1.0 (Safety Zone Assessment Service)',
+        },
         body: `data=${encodeURIComponent(comprehensiveQuery)}`,
         signal: controller.signal,
       });
@@ -680,8 +697,11 @@ export async function fetchNearbySafetyInfrastructure(
         const json = await response.json();
         if (json && Array.isArray(json.elements)) {
           rawData = json;
+          lightingQueried = true;
           break;
         }
+      } else {
+        fetchError = `HTTP ${response.status} from ${endpoint}`;
       }
     } catch (err: any) {
       fetchError = err?.message || 'Endpoint timeout or network failure';
@@ -691,14 +711,18 @@ export async function fetchNearbySafetyInfrastructure(
   // 2. If comprehensive query failed, try lean emergency fallback query
   if (!rawData || !Array.isArray(rawData.elements)) {
     const fallbackQuery = buildFallbackOverpassQuery(latitude, longitude, Math.min(searchRadiusMeters, 1500));
-    for (const endpoint of [endpoints[1], endpoints[2], endpoints[0]]) {
+    for (const endpoint of [endpoints[1], endpoints[0]]) {
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5500);
 
         const response = await fetch(endpoint, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Accept': 'application/json, */*',
+            'User-Agent': 'SafeHer-AI/1.0 (Safety Zone Assessment Service)',
+          },
           body: `data=${encodeURIComponent(fallbackQuery)}`,
           signal: controller.signal,
         });
@@ -708,6 +732,7 @@ export async function fetchNearbySafetyInfrastructure(
           const json = await response.json();
           if (json && Array.isArray(json.elements)) {
             rawData = json;
+            lightingQueried = false;
             break;
           }
         }
@@ -727,11 +752,12 @@ export async function fetchNearbySafetyInfrastructure(
       nearbyLighting: {
         litCount: 0,
         unlitCount: 0,
-        summary: 'Lighting data unavailable (network timeout or offline).',
+        summary: 'Street lighting data is temporarily unavailable.',
+        fetchedSuccessfully: false,
       },
       searchRadiusMeters,
       fetchedSuccessfully: false,
-      errorMessage: fetchError ? `Data temporarily unavailable (${fetchError})` : 'Data temporarily unavailable (OpenStreetMap service unreachable).',
+      errorMessage: fetchError ? `Safety infrastructure data is temporarily unavailable (${fetchError})` : 'Safety infrastructure data is temporarily unavailable.',
     };
   }
 
@@ -836,7 +862,9 @@ export async function fetchNearbySafetyInfrastructure(
   transport.sort((a, b) => a.distanceMeters - b.distanceMeters);
 
   let lightingSummary = 'No street lighting tags recorded within 500m.';
-  if (litWays > 0 && unlitWays === 0) {
+  if (!lightingQueried) {
+    lightingSummary = 'Street lighting data is temporarily unavailable.';
+  } else if (litWays > 0 && unlitWays === 0) {
     lightingSummary = `${litWays} lit road segments detected within 500m.`;
   } else if (litWays > 0 && unlitWays > 0) {
     lightingSummary = `Mixed street lighting (${litWays} lit, ${unlitWays} unlit segments within 500m).`;
@@ -853,6 +881,7 @@ export async function fetchNearbySafetyInfrastructure(
       litCount: litWays,
       unlitCount: unlitWays,
       summary: lightingSummary,
+      fetchedSuccessfully: lightingQueried,
     },
     searchRadiusMeters,
     fetchedSuccessfully: true,
@@ -1004,23 +1033,29 @@ REAL OPENSTREETMAP SAFETY INFRASTRUCTURE (2000m Radius - Layer 1):
 REAL RECENT REGIONAL SAFETY NEWS (Layer 2 - Past 7 Days via Google News RSS):
 ${newsSummaryText}
 
-CRITICAL RULES:
-1. Synthesize BOTH the OpenStreetMap infrastructure data AND the recent regional safety news context together with local time, day/night visibility, and GPS accuracy.
-2. DO NOT make safety decisions from locality or area name alone.
-3. DO NOT claim that an area is safe simply because a police station or hospital is nearby. Proximity to facilities provides emergency recourse and response buffering, but personal awareness is always advised.
-4. DO NOT claim that an area is dangerous simply because infrastructure is missing or not mapped in OpenStreetMap.
-5. REGIONAL SAFETY NEWS RULES:
-   - A single news headline must NOT automatically mean that the entire area or neighborhood is dangerous. News reports isolated occurrences or advisories.
-   - If there are no relevant recent articles (or if news context indicates none were found), explicitly state in your reason: "No recent public safety advisories or incidents found for this area in the past 7 days."
-   - DO NOT interpret "no news" as proof that the area is definitely safe.
+CRITICAL SAFETY & DATA INTEGRITY RULES:
+1. Synthesize BOTH OpenStreetMap infrastructure data AND recent regional safety news together with local time, day/night visibility, and GPS accuracy.
+2. DISTINGUISH THREE DATA STATES:
+   - State A (Real data found): Verified emergency facilities (police/hospital) or active infrastructure mapped.
+   - State B (Valid source returned zero mapped results): OpenStreetMap query succeeded, but 0 police stations and 0 medical facilities exist within 2 km. In this state, emergency response times may be extended.
+   - State C (Data source unavailable / timeout): OpenStreetMap or news feed request failed or timed out.
+3. MANDATORY SAFETY LEVEL CONSTRAINTS:
+   - NEVER assign "lower_concern" if OpenStreetMap infrastructure data is unavailable (State C), OR if zero emergency facilities (police + hospital/clinic) are mapped within 2 km (State B), OR if it is nighttime (10 PM - 5 AM).
+   - In any of these situations (State B, State C, or nighttime), the MINIMUM safety level MUST BE "caution".
+   - You may ONLY assign "lower_concern" during daylight hours when verified emergency infrastructure is mapped nearby (State A) and no active incident advisories exist.
+   - DO NOT treat "no data", "source unavailable", or "zero mapped facilities" as evidence that an area is safe.
+4. REGIONAL SAFETY NEWS RULES:
+   - A single news headline does not automatically make an entire region dangerous; news reports isolated occurrences or advisories.
+   - If no relevant recent articles were found, state: "No recent public safety advisories or incidents found for this area in the past 7 days."
+   - DO NOT interpret "no news found" as proof that no incidents occurred or that the area is definitely safe.
    - Never invent, assume, or hallucinate crime statistics, numbers, or incidents.
-6. Your safetyLevel must be one of:
-   - "lower_concern": Daytime with accessible infrastructure, active transit, or close emergency services, with no active emergency advisories.
-   - "caution": Late night hours (10 PM - 5 AM), low lighting, isolated areas, long distance from emergency facilities, or minor crowd/traffic/safety advisories.
-   - "higher_concern": Extreme risk combination (e.g. late night + isolated + no emergency facilities nearby, or urgent active safety advisory in immediate vicinity).
-7. "shortReason": A concise 1-2 sentence explanation reflecting the REAL infrastructure, temporal context, and regional safety news context.
-8. "recommendation": A practical, realistic safety recommendation.
-9. Return ONLY a valid raw JSON object matching the schema below. Do not wrap in markdown backticks.
+5. Your safetyLevel must be one of:
+   - "lower_concern": Daytime with verified accessible emergency infrastructure nearby and no active emergency advisories.
+   - "caution": Areas with no mapped emergency facilities within 2 km, unavailable safety data, late-night hours (10 PM - 5 AM), low lighting, or minor public advisories.
+   - "higher_concern": Urgent active safety advisory in immediate vicinity, or high vulnerability combination (e.g. late night + isolated with zero emergency recourse).
+6. "shortReason": A concise 1-2 sentence explanation reflecting the REAL infrastructure, temporal context, and regional safety news context.
+7. "recommendation": A practical, realistic safety recommendation.
+8. Return ONLY a valid raw JSON object matching the schema below. Do not wrap in markdown backticks.
 
 JSON Schema:
 {
@@ -1050,15 +1085,35 @@ JSON Schema:
         if (rawText) {
           const parsed = JSON.parse(rawText.trim());
           const validLevels: SafetyLevel[] = ['lower_concern', 'caution', 'higher_concern'];
-          const finalLevel: SafetyLevel = validLevels.includes(parsed.safetyLevel)
+          let finalLevel: SafetyLevel = validLevels.includes(parsed.safetyLevel)
             ? parsed.safetyLevel
             : isNighttime
               ? 'caution'
               : 'lower_concern';
 
+          // SAFETY GUARD: Clamp to 'caution' if infrastructure unavailable, or 0 emergency facilities mapped, or nighttime
+          const totalEmergencyFacilities =
+            infrastructure.nearbyPoliceStations.length + infrastructure.nearbyHospitals.length;
+          const hasMissingOrZeroData =
+            !infrastructure.fetchedSuccessfully ||
+            totalEmergencyFacilities === 0 ||
+            !safetyNews.fetchedSuccessfully;
+
+          let finalReason = parsed.shortReason;
+          if (finalLevel === 'lower_concern' && (hasMissingOrZeroData || isNighttime)) {
+            finalLevel = 'caution';
+            if (!infrastructure.fetchedSuccessfully) {
+              finalReason = 'Safety infrastructure data is temporarily unavailable; emergency response availability could not be verified.';
+            } else if (totalEmergencyFacilities === 0) {
+              finalReason = 'No mapped police stations or medical clinics found within 2 km; emergency response access may be extended.';
+            } else if (isNighttime) {
+              finalReason = 'Late-night hours present reduced natural lighting and limited visibility.';
+            }
+          }
+
           const assessment: SafetyZoneAssessment = {
             safetyLevel: finalLevel,
-            shortReason: parsed.shortReason || (isNighttime ? 'Late night hours present reduced natural lighting.' : 'Daytime hours with active surrounding transit.'),
+            shortReason: finalReason || (isNighttime ? 'Late night hours present reduced natural lighting.' : 'Daytime hours with active surrounding transit.'),
             recommendation: parsed.recommendation || 'Stay alert and keep emergency contacts easily accessible.',
             areaName,
             evaluatedAt,
@@ -1099,6 +1154,8 @@ JSON Schema:
   // 6. Local Rule-Based Engine (Offline or no Gemini API key)
   const closestPolice = infrastructure.nearbyPoliceStations[0];
   const closestHospital = infrastructure.nearbyHospitals[0];
+  const totalEmergencyFacilities =
+    infrastructure.nearbyPoliceStations.length + infrastructure.nearbyHospitals.length;
 
   let localReason = '';
   let localRec = '';
@@ -1113,9 +1170,20 @@ JSON Schema:
       localReason += ` No police stations detected within 2 km.`;
     }
     localRec = 'Walk along well-lit primary corridors, avoid isolated shortcuts, and consider sharing your live location with trusted contacts.';
+  } else if (!infrastructure.fetchedSuccessfully) {
+    // State C: Data source unavailable / timeout
+    localLevel = 'caution';
+    localReason = `Daytime conditions. Safety infrastructure data is temporarily unavailable; local emergency response availability could not be verified.`;
+    localRec = 'Stay observant of your surroundings, stick to known routes, and keep your emergency contacts accessible.';
+  } else if (totalEmergencyFacilities === 0) {
+    // State B: Valid source returned zero mapped emergency facilities
+    localLevel = 'caution';
+    localReason = `Daytime conditions. No mapped police stations or medical facilities found within 2 km in OpenStreetMap; emergency response access may be extended.`;
+    localRec = 'Maintain situational awareness, avoid unfamiliar isolated areas, and have emergency contacts ready.';
   } else {
+    // State A: Real emergency infrastructure data found in daytime
     localLevel = 'lower_concern';
-    localReason = `Daytime conditions with regular transit activity.`;
+    localReason = `Daytime conditions with accessible emergency infrastructure.`;
     if (closestPolice) {
       localReason += ` Nearby emergency response: ${closestPolice.name} is ${closestPolice.distanceText}.`;
     }
@@ -1130,6 +1198,8 @@ JSON Schema:
     localReason += ` Regional advisory: "${safetyNews.articles[0].title}".`;
   } else if (safetyNews.fetchedSuccessfully && safetyNews.articles.length === 0) {
     localReason += ` No recent public safety advisories or incidents found for this area in the past 7 days.`;
+  } else if (!safetyNews.fetchedSuccessfully) {
+    localReason += ` Regional safety news feed is temporarily unavailable.`;
   }
 
   const localAssessment: SafetyZoneAssessment = {

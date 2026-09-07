@@ -364,12 +364,17 @@ export default function AISafetyZoneScreen() {
                   <View style={styles.dataUnavailableBox}>
                     <SymbolView
                       name={{ ios: 'wifi.slash', android: 'cloud_off', web: 'cloud_off' } as any}
-                      size={18}
+                      size={20}
                       tintColor={isDark ? '#F87171' : '#DC2626'}
                     />
-                    <ThemedText style={styles.dataUnavailableText}>
-                      Safety infrastructure data is temporarily unavailable.
-                    </ThemedText>
+                    <View style={styles.dataUnavailableTextWrap}>
+                      <ThemedText style={styles.dataUnavailableText}>
+                        Safety infrastructure data is temporarily unavailable.
+                      </ThemedText>
+                      <ThemedText style={styles.dataUnavailableSubtext}>
+                        Street lighting data is temporarily unavailable.
+                      </ThemedText>
+                    </View>
                   </View>
                 ) : (
                   <>
@@ -487,9 +492,15 @@ export default function AISafetyZoneScreen() {
                         />
                         <ThemedText style={styles.facilityCategoryTitle}>Street Lighting (500m)</ThemedText>
                       </View>
-                      <ThemedText themeColor="textSecondary" style={styles.lightingSummaryText}>
-                        💡 {assessment.infrastructure.nearbyLighting.summary}
-                      </ThemedText>
+                      {assessment.infrastructure.nearbyLighting.fetchedSuccessfully === false ? (
+                        <ThemedText themeColor="textSecondary" style={styles.emptyFacilityText}>
+                          Street lighting data is temporarily unavailable.
+                        </ThemedText>
+                      ) : (
+                        <ThemedText themeColor="textSecondary" style={styles.lightingSummaryText}>
+                          💡 {assessment.infrastructure.nearbyLighting.summary}
+                        </ThemedText>
+                      )}
                     </View>
                   </>
                 )}
@@ -584,7 +595,7 @@ export default function AISafetyZoneScreen() {
                       </ThemedText>
                     </View>
                     <ThemedText themeColor="textSecondary" style={styles.newsClarificationText}>
-                      (This indicates that no matching public news was published in the past 7 days, not that no incidents occurred.)
+                      (This indicates that no matching public news was found, not that no incidents occurred.)
                     </ThemedText>
                   </View>
                 )}
@@ -1195,19 +1206,26 @@ const styles = StyleSheet.create({
   dataUnavailableBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    padding: 12,
+    gap: 12,
+    padding: 14,
     borderRadius: 12,
     backgroundColor: 'rgba(239, 68, 68, 0.08)',
     borderWidth: 1,
     borderColor: 'rgba(239, 68, 68, 0.25)',
     marginVertical: 4,
   },
-  dataUnavailableText: {
+  dataUnavailableTextWrap: {
     flex: 1,
+    gap: 2,
+  },
+  dataUnavailableText: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#DC2626',
+  },
+  dataUnavailableSubtext: {
+    fontSize: 12,
+    color: '#EF4444',
   },
   emptyInfrastructureNotice: {
     flexDirection: 'row',
