@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
     Alert,
+    Platform,
     Pressable,
     ScrollView,
     StyleSheet,
@@ -15,6 +16,7 @@ import { SymbolView } from 'expo-symbols';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useVoiceSOS } from '@/hooks/voice-sos-provider';
+import { useSilentGuardian } from '@/hooks/use-silent-guardian';
 import { useTheme } from '@/hooks/use-theme';
 
 const PREDEFINED_PHRASES = ['help help', 'danger danger', 'emergency', 'safeher activate'];
@@ -32,6 +34,12 @@ export default function SettingsScreen() {
         setVoiceSOSEnabled,
         setEmergencyPhrase,
     } = useVoiceSOS();
+
+    const {
+        isEnabled: silentGuardianEnabled,
+        status: silentGuardianStatus,
+        toggleSilentGuardian,
+    } = useSilentGuardian();
 
     const [customPhraseInput, setCustomPhraseInput] = useState(
         !PREDEFINED_PHRASES.includes(emergencyPhrase) ? emergencyPhrase : ''
@@ -362,6 +370,85 @@ export default function SettingsScreen() {
                                 <ThemedText style={styles.transcriptionText}>&quot;{transcription}&quot;</ThemedText>
                             </View>
                         )}
+                    </View>
+
+                    {/* 🛡️ Silent Guardian */}
+                    <View style={styles.section}>
+                        <ThemedText style={styles.sectionTitle}>
+                            🛡️ Silent Guardian
+                        </ThemedText>
+
+                        <ThemedText style={styles.sectionDescription}>
+                            Trigger emergency protection discreetly with a phone gesture.
+                        </ThemedText>
+
+                        {/* Silent Guardian Toggle Card */}
+                        <View style={styles.settingCard}>
+                            <View style={[styles.iconContainer, { backgroundColor: '#4F46E5' }]}>
+                                <SymbolView
+                                    name={{
+                                        ios: 'shield.lefthalf.filled',
+                                        android: 'security',
+                                        web: 'shield',
+                                    } as any}
+                                    size={26}
+                                    tintColor="#FFFFFF"
+                                />
+                            </View>
+
+                            <View style={styles.settingInfo}>
+                                <ThemedText style={styles.settingTitle}>
+                                    Silent Guardian Mode
+                                </ThemedText>
+
+                                <ThemedText style={styles.settingDescription}>
+                                    Shake your phone with the configured gesture to start emergency protection.
+                                </ThemedText>
+                            </View>
+
+                            <Switch
+                                value={silentGuardianEnabled}
+                                onValueChange={toggleSilentGuardian}
+                                disabled={Platform.OS === 'web'}
+                            />
+                        </View>
+                    </View>
+
+                    {/* Silent Guardian Status Card */}
+                    <View
+                        style={[
+                            styles.statusCard,
+                            silentGuardianEnabled
+                                ? (silentGuardianStatus === 'monitoring' ? styles.statusListening : styles.statusEnabled)
+                                : (silentGuardianStatus === 'unsupported' ? styles.statusError : styles.statusDisabled),
+                        ]}
+                    >
+                        <ThemedText style={styles.statusTitle}>
+                            {Platform.OS === 'web' && '⚪ Silent Guardian: Unavailable on Web'}
+                            {Platform.OS !== 'web' && silentGuardianStatus === 'monitoring' && '🟢 Silent Guardian: Active & Monitoring'}
+                            {Platform.OS !== 'web' && silentGuardianStatus === 'countdown' && '⚠️ Silent Guardian: Countdown Active'}
+                            {Platform.OS !== 'web' && silentGuardianStatus === 'triggered' && '🚨 Silent Guardian: SOS Dispatched'}
+                            {Platform.OS !== 'web' && silentGuardianStatus === 'unsupported' && '🔴 Silent Guardian: Sensor Unsupported'}
+                            {Platform.OS !== 'web' && !silentGuardianEnabled && '⚪ Silent Guardian: OFF'}
+                        </ThemedText>
+
+                        <ThemedText style={styles.statusText}>
+                            {Platform.OS === 'web'
+                                ? 'Hardware motion sensors are not available in web browsers. Use the SafeHer mobile app on Android or iOS.'
+                                : silentGuardianEnabled
+                                    ? 'Requires 3 deliberate rapid shakes within 1.5 seconds to trigger. Accidental single movements are automatically ignored.'
+                                    : 'When enabled, a deliberate 3-shake gesture will discreetly start the 5-second countdown without exposing sensitive screens or sounding alarms.'}
+                        </ThemedText>
+
+                        <View style={{ marginTop: 8, paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(148, 163, 184, 0.2)' }}>
+                            <ThemedText style={{ fontSize: 11, color: '#94A3B8' }}>
+                                {Platform.OS === 'android'
+                                    ? '📱 Android: Runs via native low-power background service while app is active or minimized. Does not monitor if app is force-stopped.'
+                                    : Platform.OS === 'ios'
+                                        ? '📱 iOS: Operates while the SafeHer AI app is active in the foreground.'
+                                        : '🌐 Web: Simulated/fallback mode.'}
+                            </ThemedText>
+                        </View>
                     </View>
 
                     {/* How it works */}

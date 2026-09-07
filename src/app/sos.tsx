@@ -369,10 +369,12 @@ export default function SOSScreen() {
     // Activation trigger - runs once when isActivated becomes true
     useEffect(() => {
         if (isActivated && !smsSentRef.current) {
-            void playSOSSound();
+            if (params.silent !== 'true') {
+                void playSOSSound();
+            }
             void handleSOSAlertDispatch();
         }
-    }, [isActivated, handleSOSAlertDispatch]);
+    }, [isActivated, handleSOSAlertDispatch, params.silent]);
 
     const startSOS = useCallback(() => {
         setCountdown(5);

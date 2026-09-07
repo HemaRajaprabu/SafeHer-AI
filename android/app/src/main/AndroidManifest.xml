@@ -43,5 +43,10 @@
         <data android:scheme="exp+safeher-ai"/>
       </intent-filter>
     </activity>
+    <service
+      android:name=".SilentGuardianService"
+      android:enabled="true"
+      android:exported="false"
+      android:foregroundServiceType="location" />
   </application>
 </manifest>
