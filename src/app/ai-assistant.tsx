@@ -38,7 +38,7 @@ export default function AIAssistantScreen() {
     {
       id: 'welcome',
       role: 'model',
-      text: "Hello! I am SafeHer AI, your safety companion. Let me know what is happening or if you feel unsafe, and I will analyze the situation and guide you.",
+      text: "Hello! I am your Personal Safety Advisor. Tell me what is happening in your own words, and I will give you immediate guidance on what to do now.",
       timestamp: new Date(),
     },
   ]);
@@ -143,7 +143,7 @@ export default function AIAssistantScreen() {
       {
         id: 'welcome',
         role: 'model',
-        text: "Hello! I am SafeHer AI, your safety companion. Let me know what is happening or if you feel unsafe, and I will analyze the situation and guide you.",
+        text: "Hello! I am your Personal Safety Advisor. Tell me what is happening in your own words, and I will give you immediate guidance on what to do now.",
         timestamp: new Date(),
       },
     ]);
@@ -176,7 +176,7 @@ export default function AIAssistantScreen() {
             <View style={styles.headerStatus}>
               <View style={[styles.statusDot, { backgroundColor: '#10B981' }]} />
               <ThemedText style={styles.headerSubtitle} themeColor="textSecondary">
-                Live Companion
+                Personal Safety Advisor
               </ThemedText>
             </View>
           </View>
@@ -279,7 +279,7 @@ export default function AIAssistantScreen() {
                               },
                             ]}
                           >
-                            Risk: {riskLvl.toUpperCase()} ({message.meta.riskScore}%)
+                            Level: {riskLvl.toUpperCase()}
                           </ThemedText>
                         </View>
                       )}
@@ -357,7 +357,7 @@ export default function AIAssistantScreen() {
                   borderColor: isDark ? '#334155' : '#E2E8F0',
                 },
               ]}
-              placeholder="Tell SafeHer AI what is happening..."
+              placeholder="Describe your situation in your own words..."
               placeholderTextColor={isDark ? '#64748B' : '#94A3B8'}
               value={inputText}
               onChangeText={setInputText}

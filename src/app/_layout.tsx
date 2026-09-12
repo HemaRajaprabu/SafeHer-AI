@@ -6,6 +6,7 @@ import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import AppTabs from '@/components/app-tabs';
 import { AuthProvider } from '@/hooks/auth-provider';
 import { VoiceSOSProvider } from '@/hooks/voice-sos-provider';
+import { SilentGuardianProvider } from '@/hooks/silent-guardian-provider';
 import { useAuth } from '@/hooks/use-auth';
 import AuthFlow from '@/components/auth/auth-flow';
 import { ThemedView } from '@/components/themed-view';
@@ -100,10 +101,12 @@ export default function RootLayout() {
   return (
     <AuthProvider>
       <VoiceSOSProvider>
-        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-          <AnimatedSplashOverlay />
-          <AuthOrApp />
-        </ThemeProvider>
+        <SilentGuardianProvider>
+          <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+            <AnimatedSplashOverlay />
+            <AuthOrApp />
+          </ThemeProvider>
+        </SilentGuardianProvider>
       </VoiceSOSProvider>
     </AuthProvider>
   );

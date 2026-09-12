@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
-import { AppState, Platform } from 'react-native';
+import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ExpoSpeechRecognitionModule } from 'expo-speech-recognition';
 import { useRouter } from 'expo-router';
@@ -24,101 +24,150 @@ export function VoiceSOSProvider({ children }: { children: React.ReactNode }) {
   const [voiceSOSStatus, setVoiceSOSStatus] = useState<VoiceSOSStatus>('off');
   const [emergencyPhrase, setEmergencyPhraseState] = useState('help help');
   const [transcription, setTranscription] = useState('');
-  
+
   const appStateRef = useRef(AppState.currentState);
   const isListeningRef = useRef(false);
+  const isEnabledRef = useRef(false);
+  const emergencyPhraseRef = useRef('help help');
+  const restartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const router = useRouter();
 
   const stopListeningNative = useCallback(() => {
-    if (Platform.OS === 'web') return;
-    if (!isListeningRef.current) return;
-    
+    isListeningRef.current = false;
     try {
       ExpoSpeechRecognitionModule.stop();
     } catch (e) {
       console.log('[VoiceSOS] Error calling stop():', e);
     }
-    isListeningRef.current = false;
   }, []);
 
-  const startListeningNative = useCallback(async () => {
-    if (Platform.OS === 'web') return;
-    if (isListeningRef.current) return;
-    
+  const startListeningNative = useCallback(async (): Promise<boolean> => {
+    if (isListeningRef.current) return true;
+
     try {
-      const { granted } = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-      if (!granted) {
+      // Verify permissions before starting
+      const perms = await ExpoSpeechRecognitionModule.getPermissionsAsync();
+      if (!perms.granted) {
         setVoiceSOSStatus('permission_denied');
         setVoiceSOSEnabledState(false);
+        isEnabledRef.current = false;
         await AsyncStorage.setItem('voiceSOSEnabled', 'false');
-        return;
+        return false;
       }
 
-      setVoiceSOSStatus('listening');
-      isListeningRef.current = true;
       setTranscription('');
-      
-      console.log('[VoiceSOS] Starting speech recognition (on-device)...');
+      isListeningRef.current = true;
+
+      const phrase = emergencyPhraseRef.current;
+      console.log('[VoiceSOS] Starting speech recognition for phrase:', phrase);
+
       ExpoSpeechRecognitionModule.start({
         lang: 'en-US',
         interimResults: true,
         continuous: true,
-        requiresOnDeviceRecognition: true,
+        requiresOnDeviceRecognition: false,
+        contextualStrings: [
+          phrase,
+          'help help',
+          'danger danger',
+          'emergency',
+          'safeher activate',
+        ],
       });
+
+      setVoiceSOSStatus('listening');
+      return true;
     } catch (err) {
-      console.log('[VoiceSOS] Error starting speech recognition (on-device):', err);
-      // Fallback in case requiresOnDeviceRecognition: true is not supported on this device/locale
-      try {
-        console.log('[VoiceSOS] Retrying with requiresOnDeviceRecognition: false...');
-        ExpoSpeechRecognitionModule.start({
-          lang: 'en-US',
-          interimResults: true,
-          continuous: true,
-          requiresOnDeviceRecognition: false,
-        });
-      } catch (fallbackErr) {
-        console.log('[VoiceSOS] Speech recognition fallback failed:', fallbackErr);
-        setVoiceSOSStatus('error');
-        setVoiceSOSEnabledState(false);
-        await AsyncStorage.setItem('voiceSOSEnabled', 'false');
-        isListeningRef.current = false;
-      }
+      console.log('[VoiceSOS] Error starting speech recognition:', err);
+      isListeningRef.current = false;
+      return false;
     }
   }, []);
 
   const triggerSOS = useCallback(async () => {
+    console.log('[VoiceSOS] Emergency phrase detected! Triggering SOS flow...');
+
     // 1. Turn OFF Voice SOS monitoring immediately to avoid double triggers
+    isEnabledRef.current = false;
     setVoiceSOSEnabledState(false);
     await AsyncStorage.setItem('voiceSOSEnabled', 'false');
-    
+
     // 2. Stop native recognition
     stopListeningNative();
     setVoiceSOSStatus('off');
 
-    // 3. Navigate to SOS page with auto-start parameter
+    // 3. Navigate to SOS page with auto-start parameter (existing SOS flow)
     router.push('/sos?autoStart=true');
   }, [router, stopListeningNative]);
 
   const setVoiceSOSEnabled = useCallback(async (enabled: boolean) => {
+    if (!enabled) {
+      isEnabledRef.current = false;
+      stopListeningNative();
+      setVoiceSOSEnabledState(false);
+      setVoiceSOSStatus('off');
+      await AsyncStorage.setItem('voiceSOSEnabled', 'false');
+      return;
+    }
+
     try {
-      setVoiceSOSEnabledState(enabled);
-      await AsyncStorage.setItem('voiceSOSEnabled', enabled ? 'true' : 'false');
-      
-      if (enabled) {
-        setVoiceSOSStatus('on');
-        await startListeningNative();
-      } else {
+      // 1. Check if speech recognition is available on this platform/device
+      let available = true;
+      try {
+        if (typeof ExpoSpeechRecognitionModule.isRecognitionAvailable === 'function') {
+          available = ExpoSpeechRecognitionModule.isRecognitionAvailable();
+        }
+      } catch (e) {
+        console.log('[VoiceSOS] Error checking isRecognitionAvailable:', e);
+      }
+
+      if (!available) {
+        isEnabledRef.current = false;
+        setVoiceSOSEnabledState(false);
+        setVoiceSOSStatus('error');
+        await AsyncStorage.setItem('voiceSOSEnabled', 'false');
+        return;
+      }
+
+      // 2. Request and verify microphone/speech permissions
+      const { granted } = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+      if (!granted) {
+        isEnabledRef.current = false;
         stopListeningNative();
-        setVoiceSOSStatus('off');
+        setVoiceSOSEnabledState(false);
+        setVoiceSOSStatus('permission_denied');
+        await AsyncStorage.setItem('voiceSOSEnabled', 'false');
+        return;
+      }
+
+      // 3. Start microphone monitoring - only set ON if monitoring successfully started
+      isEnabledRef.current = true;
+      const started = await startListeningNative();
+      if (started) {
+        setVoiceSOSEnabledState(true);
+        setVoiceSOSStatus('listening');
+        await AsyncStorage.setItem('voiceSOSEnabled', 'true');
+      } else {
+        isEnabledRef.current = false;
+        stopListeningNative();
+        setVoiceSOSEnabledState(false);
+        setVoiceSOSStatus('error');
+        await AsyncStorage.setItem('voiceSOSEnabled', 'false');
       }
     } catch (err) {
-      console.log('[VoiceSOS] Error toggling voice SOS setting:', err);
+      console.log('[VoiceSOS] Error enabling voice SOS:', err);
+      isEnabledRef.current = false;
+      stopListeningNative();
+      setVoiceSOSEnabledState(false);
+      setVoiceSOSStatus('error');
+      await AsyncStorage.setItem('voiceSOSEnabled', 'false');
     }
   }, [startListeningNative, stopListeningNative]);
 
   const setEmergencyPhrase = useCallback(async (phrase: string) => {
     try {
       setEmergencyPhraseState(phrase);
+      emergencyPhraseRef.current = phrase;
       await AsyncStorage.setItem('emergencyPhrase', phrase);
     } catch (err) {
       console.log('[VoiceSOS] Error setting emergency phrase:', err);
@@ -131,15 +180,28 @@ export function VoiceSOSProvider({ children }: { children: React.ReactNode }) {
       try {
         const savedEnabled = await AsyncStorage.getItem('voiceSOSEnabled');
         const savedPhrase = await AsyncStorage.getItem('emergencyPhrase');
-        
+
         if (savedPhrase !== null) {
           setEmergencyPhraseState(savedPhrase);
+          emergencyPhraseRef.current = savedPhrase;
         }
-        
+
         if (savedEnabled === 'true') {
-          setVoiceSOSEnabledState(true);
-          setVoiceSOSStatus('on');
+          // Verify permission still granted before restoring ON
+          const perms = await ExpoSpeechRecognitionModule.getPermissionsAsync();
+          if (perms.granted) {
+            isEnabledRef.current = true;
+            setVoiceSOSEnabledState(true);
+            setVoiceSOSStatus('listening');
+            void startListeningNative();
+          } else {
+            isEnabledRef.current = false;
+            setVoiceSOSEnabledState(false);
+            setVoiceSOSStatus('off');
+            await AsyncStorage.setItem('voiceSOSEnabled', 'false');
+          }
         } else {
+          isEnabledRef.current = false;
           setVoiceSOSEnabledState(false);
           setVoiceSOSStatus('off');
         }
@@ -147,24 +209,45 @@ export function VoiceSOSProvider({ children }: { children: React.ReactNode }) {
         console.log('[VoiceSOS] Error loading settings:', err);
       }
     };
-    loadSettings();
-  }, []);
+    void loadSettings();
+  }, [startListeningNative]);
 
   // Handle Speech Recognition events
   useEffect(() => {
-    if (Platform.OS === 'web') return;
+    // Normalization helper: strips punctuation and extra spaces
+    const normalize = (str: string) =>
+      str.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 
-    // Listen for results
+    // Listen for speech results
     const resultSubscription = ExpoSpeechRecognitionModule.addListener('result', (event) => {
-      const text = event.results?.map(r => r.transcript).join(' ') || '';
-      setTranscription(text);
-      
-      const cleanedText = text.toLowerCase().trim();
-      const cleanedPhrase = emergencyPhrase.toLowerCase().trim();
-      
-      if (cleanedText.includes(cleanedPhrase)) {
-        console.log(`[VoiceSOS] Phrase matched! Cleaned transcript: "${cleanedText}" matches phrase: "${cleanedPhrase}"`);
-        triggerSOS();
+      const results = event.results || [];
+      const primaryTranscript = results[0]?.transcript || '';
+      if (primaryTranscript) {
+        setTranscription(primaryTranscript);
+      }
+
+      const targetPhrase = normalize(emergencyPhraseRef.current || 'help help');
+      if (!targetPhrase) return;
+
+      // Candidate strings to check: each alternative and full concatenated text
+      const candidates = [
+        ...results.map((r) => normalize(r.transcript)),
+        normalize(results.map((r) => r.transcript).join(' ')),
+      ];
+
+      const matched = candidates.some((cand) => cand.includes(targetPhrase));
+
+      if (matched) {
+        console.log(`[VoiceSOS] Phrase matched! Transcript: "${primaryTranscript}" matches phrase: "${targetPhrase}"`);
+        void triggerSOS();
+      }
+    });
+
+    // Listen for start and audiostart
+    const startSubscription = ExpoSpeechRecognitionModule.addListener('start', () => {
+      isListeningRef.current = true;
+      if (isEnabledRef.current) {
+        setVoiceSOSStatus('listening');
       }
     });
 
@@ -172,65 +255,69 @@ export function VoiceSOSProvider({ children }: { children: React.ReactNode }) {
     const errorSubscription = ExpoSpeechRecognitionModule.addListener('error', (event) => {
       console.log('[VoiceSOS] Speech recognition error event:', event.error, event.message);
       if (event.error === 'not-allowed') {
+        isEnabledRef.current = false;
+        isListeningRef.current = false;
         setVoiceSOSStatus('permission_denied');
         setVoiceSOSEnabledState(false);
-        AsyncStorage.setItem('voiceSOSEnabled', 'false');
-      } else if (event.error === 'no-speech') {
-        // Normal silence error, can be ignored
+        void AsyncStorage.setItem('voiceSOSEnabled', 'false');
+      } else if (event.error === 'no-speech' || event.error === 'speech-timeout') {
+        // Normal silence timeout on Android - recognition ends and will auto-restart
+      } else if (event.error === 'busy') {
+        // Speech service busy - will recover on next cycle
       } else {
-        // Log other errors, but don't crash
+        console.log('[VoiceSOS] Speech recognition warning:', event.error);
       }
     });
 
     // Listen for end event to handle continuous auto-restart
     const endSubscription = ExpoSpeechRecognitionModule.addListener('end', () => {
       isListeningRef.current = false;
-      
-      // Auto-restart if it should be listening, app is active, and SOS not triggered yet
-      AsyncStorage.getItem('voiceSOSEnabled').then(async (val) => {
+
+      if (restartTimeoutRef.current) {
+        clearTimeout(restartTimeoutRef.current);
+      }
+
+      // Auto-restart continuous recognition if enabled, app active, and SOS not active
+      restartTimeoutRef.current = setTimeout(async () => {
+        const enabled = await AsyncStorage.getItem('voiceSOSEnabled');
         const active = await AsyncStorage.getItem('isSOSActive');
-        if (val === 'true' && active !== 'true' && appStateRef.current === 'active') {
-          console.log('[VoiceSOS] Native session ended. Auto-restarting recognition...');
-          startListeningNative();
+        if (enabled === 'true' && active !== 'true' && appStateRef.current === 'active' && isEnabledRef.current) {
+          console.log('[VoiceSOS] Session ended. Auto-restarting continuous monitoring...');
+          void startListeningNative();
         } else {
-          setVoiceSOSStatus(val === 'true' ? 'on' : 'off');
+          setVoiceSOSStatus(enabled === 'true' ? 'on' : 'off');
         }
-      });
+      }, 300);
     });
 
     return () => {
       resultSubscription.remove();
+      startSubscription.remove();
       errorSubscription.remove();
       endSubscription.remove();
+      if (restartTimeoutRef.current) {
+        clearTimeout(restartTimeoutRef.current);
+      }
     };
-  }, [emergencyPhrase, triggerSOS, startListeningNative]);
+  }, [triggerSOS, startListeningNative]);
 
-  // Monitor AppState to stop in background and start in foreground
+  // Monitor AppState to stop in background and resume in foreground
   useEffect(() => {
     const subscription = AppState.addEventListener('change', async (nextAppState) => {
       const isSOSActive = await AsyncStorage.getItem('isSOSActive');
       const prevAppState = appStateRef.current;
       appStateRef.current = nextAppState;
-      
+
       if (prevAppState.match(/inactive|background/) && nextAppState === 'active') {
         console.log('[VoiceSOS] App has come to the foreground, checking if we should resume...');
-        
-        // Resume listening if enabled and SOS is not active
         const enabled = await AsyncStorage.getItem('voiceSOSEnabled');
-        if (enabled === 'true' && isSOSActive !== 'true') {
-          startListeningNative();
+        if (enabled === 'true' && isSOSActive !== 'true' && isEnabledRef.current) {
+          void startListeningNative();
         }
       } else if (nextAppState.match(/inactive|background/)) {
         console.log('[VoiceSOS] App went to the background, pausing listener...');
-        
-        // Stop listening in background
         if (isListeningRef.current) {
-          try {
-            ExpoSpeechRecognitionModule.stop();
-          } catch (e) {
-            console.log('[VoiceSOS] Error stopping on background transition:', e);
-          }
-          isListeningRef.current = false;
+          stopListeningNative();
           setVoiceSOSStatus('on');
         }
       }
@@ -239,20 +326,7 @@ export function VoiceSOSProvider({ children }: { children: React.ReactNode }) {
     return () => {
       subscription.remove();
     };
-  }, [startListeningNative]);
-
-  // Trigger listening if enabled and app is active on mount/changes
-  useEffect(() => {
-    if (voiceSOSEnabled && appStateRef.current === 'active') {
-      AsyncStorage.getItem('isSOSActive').then((active) => {
-        if (active !== 'true') {
-          startListeningNative();
-        }
-      });
-    } else {
-      stopListeningNative();
-    }
-  }, [voiceSOSEnabled, startListeningNative, stopListeningNative]);
+  }, [startListeningNative, stopListeningNative]);
 
   return (
     <VoiceSOSContext.Provider
@@ -263,7 +337,9 @@ export function VoiceSOSProvider({ children }: { children: React.ReactNode }) {
         transcription,
         setVoiceSOSEnabled,
         setEmergencyPhrase,
-        startListening: startListeningNative,
+        startListening: async () => {
+          void startListeningNative();
+        },
         stopListening: stopListeningNative,
       }}
     >
