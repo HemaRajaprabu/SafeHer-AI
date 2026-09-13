@@ -16,7 +16,7 @@ export interface Contact {
 export type SOSNotificationStatus = 'idle' | 'sending' | 'notified' | 'composer_opened' | 'failed' | 'no_contacts';
 
 export interface SOSDispatchOptions {
-  source?: 'manual' | 'voice' | 'silent_guardian';
+  source?: 'manual';
   silent?: boolean;
   locationCoords?: { latitude: number; longitude: number; accuracy?: number | null; googleMapsLink?: string };
 }

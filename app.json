@@ -30,8 +30,7 @@
         "ACCESS_BACKGROUND_LOCATION",
         "FOREGROUND_SERVICE",
         "FOREGROUND_SERVICE_LOCATION",
-        "SEND_SMS",
-        "RECORD_AUDIO"
+        "SEND_SMS"
       ],
       "predictiveBackGestureEnabled": false
     },
@@ -54,13 +53,6 @@
         {
           "locationAlwaysPermission": "Allow SafeHer AI to access your location in the background for active SOS tracking.",
           "isAndroidBackgroundLocationEnabled": true
-        }
-      ],
-      [
-        "expo-speech-recognition",
-        {
-          "microphonePermission": "Allow SafeHer AI to access the microphone for Voice SOS monitoring.",
-          "speechRecognitionPermission": "Allow SafeHer AI to recognize your emergency voice triggers."
         }
       ],
       "expo-image"
