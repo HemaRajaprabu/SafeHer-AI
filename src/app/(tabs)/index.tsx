@@ -19,7 +19,6 @@ export default function HomeScreen() {
 
   const isLarge = width >= 1024;
   const isMedium = width >= 640 && width < 1024;
-  const isSmallMobile = width < 480;
 
   // Compute responsive card width
   // Desktop: null (uses flex: 1 to fill row equally), Tablet: '48%', Mobile: '100%'
@@ -62,45 +61,6 @@ export default function HomeScreen() {
           ]}
           showsVerticalScrollIndicator={false}
         >
-          {/* TOP NAVIGATION BAR */}
-          <View style={styles.navBarContainer}>
-            <View style={[styles.topNavBar, isSmallMobile && { paddingHorizontal: 10, paddingVertical: 8 }]}>
-              <View style={[styles.navLeft, isSmallMobile && { gap: 6 }]}>
-                <View style={[styles.navShieldIcon, isSmallMobile && { width: 24, height: 24 }]}>
-                  <SymbolView
-                    name={{
-                      ios: 'shield.fill',
-                      android: 'security',
-                      web: 'shield',
-                    } as any}
-                    size={isSmallMobile ? 18 : 22}
-                    tintColor="#8B5CF6"
-                  />
-                  <SymbolView
-                    name={{
-                      ios: 'heart.fill',
-                      android: 'favorite',
-                      web: 'favorite',
-                    } as any}
-                    size={isSmallMobile ? 8 : 10}
-                    tintColor="#FFFFFF"
-                    style={[styles.navShieldHeart, isSmallMobile && { top: 7 }]}
-                  />
-                </View>
-                <Text style={[styles.navLogoText, isSmallMobile && { fontSize: 14 }]}>SafeHer AI</Text>
-              </View>
-
-              <View style={[styles.navRight, isSmallMobile && { gap: 4 }]}>
-                <View style={[styles.navPill, styles.navPillActive, isSmallMobile && { paddingHorizontal: 8, paddingVertical: 6 }]}>
-                  <Text style={[styles.navPillActiveText, isSmallMobile && { fontSize: 11 }]}>Home</Text>
-                </View>
-                <Pressable style={[styles.navPill, isSmallMobile && { paddingHorizontal: 8, paddingVertical: 6 }]}>
-                  <Text style={[styles.navPillInactiveText, isSmallMobile && { fontSize: 11 }]}>Explore</Text>
-                </Pressable>
-              </View>
-            </View>
-          </View>
-
           {/* Header Section */}
           <View style={styles.heroSection}>
             <Text style={[styles.title, { fontSize: width < 640 ? 38 : 52, lineHeight: width < 640 ? 44 : 60 }, styles.titleGradient]}>
@@ -524,96 +484,6 @@ const styles = StyleSheet.create({
   },
   scrollContentWeb: {
     paddingTop: 32,
-  },
-  navBarContainer: {
-    alignItems: 'center',
-    width: '100%',
-    zIndex: 10,
-  },
-  topNavBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: 'rgba(255, 255, 255, 0.85)',
-    borderRadius: 40,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    width: '100%',
-    maxWidth: 1100,
-    shadowColor: '#A78BFA',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 4,
-    ...Platform.select({
-      web: {
-        backdropFilter: 'blur(10px)',
-      } as any,
-    }),
-  },
-  navLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingLeft: 4,
-  },
-  navShieldIcon: {
-    width: 32,
-    height: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
-    position: 'relative',
-  },
-  navShieldHeart: {
-    position: 'absolute',
-    top: 9,
-  },
-  navLogoText: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#4338CA',
-    letterSpacing: -0.3,
-  },
-  navRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#F1F5F9',
-    borderRadius: 30,
-    padding: 4,
-  },
-  navPill: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  navPillActive: {
-    backgroundColor: '#8B5CF6',
-    ...Platform.select({
-      web: {
-        backgroundImage: 'linear-gradient(135deg, #8B5CF6 0%, #A855F7 100%)',
-      } as any,
-    }),
-    shadowColor: '#8B5CF6',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  navPillActiveText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  navPillInactiveText: {
-    color: '#475569',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  navPillWithIcon: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
   },
   heroSection: {
     alignItems: 'center',
