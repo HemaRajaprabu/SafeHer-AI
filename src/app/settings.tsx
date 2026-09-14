@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
     Alert,
+    Pressable,
     ScrollView,
     StyleSheet,
     Switch,
@@ -9,10 +10,12 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
+import { router } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useTheme } from '@/hooks/use-theme';
+import { MaxContentWidth } from '@/constants/theme';
 
 export default function SettingsScreen() {
     const theme = useTheme();
@@ -97,7 +100,23 @@ export default function SettingsScreen() {
                 >
                     {/* Header */}
                     <View style={styles.header}>
-                        <View style={styles.headerSpace} />
+                        <Pressable
+                            onPress={() => router.back()}
+                            style={({ pressed }) => [
+                                styles.backButton,
+                                pressed && styles.pressed,
+                            ]}
+                        >
+                            <SymbolView
+                                name={{
+                                    ios: 'chevron.left',
+                                    android: 'arrow_back',
+                                    web: 'arrow_back',
+                                } as any}
+                                size={24}
+                                tintColor={theme.text}
+                            />
+                        </Pressable>
 
                         <ThemedText style={styles.headerTitle}>
                             Safety Settings
@@ -341,6 +360,9 @@ const styles = StyleSheet.create({
 
     safeArea: {
         flex: 1,
+        maxWidth: MaxContentWidth,
+        width: '100%',
+        alignSelf: 'center',
     },
 
     content: {
@@ -353,6 +375,19 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'space-between',
         paddingVertical: 16,
+    },
+
+    backButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: '#FFFFFF',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+
+    pressed: {
+        opacity: 0.7,
     },
 
     headerTitle: {
