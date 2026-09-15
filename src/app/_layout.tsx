@@ -5,7 +5,6 @@ import { ActivityIndicator, StyleSheet, useColorScheme } from 'react-native';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import AppTabs from '@/components/app-tabs';
 import { AuthProvider } from '@/hooks/auth-provider';
-import { VoiceSOSProvider } from '@/hooks/voice-sos-provider';
 import { useAuth } from '@/hooks/use-auth';
 import AuthFlow from '@/components/auth/auth-flow';
 import { ThemedView } from '@/components/themed-view';
@@ -90,6 +89,13 @@ function AuthOrApp() {
           headerShown: false,
         }}
       />
+
+      <Stack.Screen
+        name="settings"
+        options={{
+          headerShown: false,
+        }}
+      />
     </Stack>
   );
 }
@@ -99,12 +105,10 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
-      <VoiceSOSProvider>
-        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-          <AnimatedSplashOverlay />
-          <AuthOrApp />
-        </ThemeProvider>
-      </VoiceSOSProvider>
+      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+        <AnimatedSplashOverlay />
+        <AuthOrApp />
+      </ThemeProvider>
     </AuthProvider>
   );
 }

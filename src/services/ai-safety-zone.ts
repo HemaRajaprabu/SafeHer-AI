@@ -19,6 +19,7 @@ export interface NearbyLightingInfo {
   litCount: number;
   unlitCount: number;
   summary: string;
+  fetchedSuccessfully?: boolean;
 }
 
 export interface SafetyInfrastructureData {
@@ -52,11 +53,11 @@ export interface RegionalSafetyNewsData {
 
 export interface LocalityDetails {
   areaName: string;
-  locality?: string;
-  city?: string;
-  district?: string;
-  region?: string;
-  countryCode?: string;
+  locality?: string; // village, hamlet, suburb, neighbourhood, town
+  city?: string;     // city, municipality, town
+  district?: string; // state_district, county, subregion
+  region?: string;   // state, province
+  countryCode?: string; // ISO 3166-1 alpha-2 (e.g. IN, US, GB, etc.)
 }
 
 export interface SafetyZoneAssessment {
@@ -85,6 +86,21 @@ export interface SafetyZoneAssessment {
 }
 
 /**
+ * In-memory cache for recent assessments to prevent unnecessary repeated API calls
+ * while user remains at the same location.
+ */
+interface CachedSafetyAssessment {
+  latitude: number;
+  longitude: number;
+  timestamp: number;
+  assessment: SafetyZoneAssessment;
+}
+
+let lastAssessmentCache: CachedSafetyAssessment | null = null;
+const CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
+const CACHE_DISTANCE_THRESHOLD_KM = 0.05; // 50 meters
+
+/**
  * Format distance in meters to a clean human-readable string.
  */
 export function formatDistance(meters: number): string {
@@ -96,129 +112,173 @@ export function formatDistance(meters: number): string {
 
 /**
  * Detects if a police facility is an All-Women / Women's Police Station
- * (Common in India / Tamil Nadu as "AWPS" or "All Women Police Station").
+ * (Common in India / Tamil Nadu as "AWPS" or "All Women Police Station",
+ * and globally as Mahila Thana / Magalir / Women's Police Station).
  */
-function isWomenPoliceStation(name?: string, tags?: Record<string, string>): boolean {
-  const combined = `${name || ''} ${tags?.operator || ''} ${tags?.description || ''} ${tags?.alt_name || ''}`.toLowerCase();
-  if (tags?.female === 'yes' || tags?.['operator:type'] === 'all_women') {
+export function isWomenPoliceStation(name?: string, tags?: Record<string, string>): boolean {
+  const combined = `${name || ''} ${tags?.operator || ''} ${tags?.description || ''} ${tags?.alt_name || ''} ${tags?.official_name || ''}`.toLowerCase();
+  if (tags?.female === 'yes' || tags?.['operator:type'] === 'all_women' || tags?.women === 'yes') {
     return true;
   }
-  return /(all[\s-]women|women[\s-]police|awps|mahila|magalir)/i.test(combined);
+  return /(all[\s-]women|women[\s-]police|awps|mahila|magalir|vanitha)/i.test(combined);
+}
+
+/**
+ * Parses structured address components from OpenStreetMap Nominatim reverse geocoding.
+ * Strictly adheres to meaningful geographic hierarchy:
+ * village -> hamlet -> suburb -> neighbourhood -> town -> city -> municipality -> county -> state_district -> state -> country
+ * NEVER assigns road names to locality, city, or district.
+ */
+function parseNominatimAddress(addr: Record<string, any>, lat: number, lon: number): LocalityDetails {
+  // 1. Settlement / neighbourhood level (hyper-local)
+  const locality =
+    addr.village ||
+    addr.hamlet ||
+    addr.suburb ||
+    addr.neighbourhood ||
+    addr.subdivision ||
+    addr.quarter ||
+    addr.city_district ||
+    addr.isolated_dwelling ||
+    addr.croft ||
+    (addr.town && addr.town !== addr.city ? addr.town : undefined) ||
+    undefined;
+
+  // 2. City / municipality level
+  const city =
+    addr.city ||
+    (addr.town && addr.town !== locality ? addr.town : undefined) ||
+    addr.municipality ||
+    (addr.state_district && addr.state_district !== locality ? addr.state_district : undefined) ||
+    (addr.county && addr.county !== locality ? addr.county : undefined) ||
+    undefined;
+
+  // 3. District / county level
+  const district =
+    addr.state_district ||
+    addr.county ||
+    (addr.district && addr.district !== locality ? addr.district : undefined) ||
+    undefined;
+
+  // 4. State / province level
+  const region = addr.state || addr.province || addr.region || undefined;
+
+  // 5. Country ISO code
+  const countryCode = addr.country_code ? String(addr.country_code).toUpperCase() : undefined;
+
+  // 6. Area display name: Uses locality, city, district, region. Road is only a display fallback.
+  const displayLocality = locality || addr.road || addr.street;
+  const parts = [displayLocality, city, district, region].filter(Boolean) as string[];
+  const areaName = parts.length > 0 ? parts.join(', ') : `Coordinates: ${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+
+  return {
+    areaName,
+    locality: locality ? String(locality).trim() : undefined,
+    city: city ? String(city).trim() : undefined,
+    district: district ? String(district).trim() : undefined,
+    region: region ? String(region).trim() : undefined,
+    countryCode: countryCode ? String(countryCode).trim() : undefined,
+  };
+}
+
+/**
+ * Fetches OpenStreetMap Nominatim reverse geocoding with strict timeout.
+ */
+async function fetchNominatimReverse(latitude: number, longitude: number): Promise<LocalityDetails | null> {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4500); // 4.5s timeout
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`,
+      {
+        headers: { Accept: 'application/json', 'User-Agent': 'SafeHer-AI/1.0 (Safety Zone Service)' },
+        signal: controller.signal,
+      }
+    );
+    clearTimeout(timeoutId);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.address) {
+        return parseNominatimAddress(data.address, latitude, longitude);
+      }
+    }
+  } catch {
+    // Network or timeout failure in Nominatim reverse geocode
+  }
+  return null;
 }
 
 /**
  * Resolves structured locality details from GPS coordinates via reverse geocoding.
- * Supports mobile (expo-location) and web (OpenStreetMap Nominatim fallback).
+ * Supports mobile (expo-location with Nominatim fallback) and web (Nominatim).
+ * Prioritizes meaningful geographic hierarchy without using road names as primary terms.
  */
 export async function getLocalityDetails(
   latitude: number,
   longitude: number
 ): Promise<LocalityDetails> {
-  let areaName = `Lat: ${latitude.toFixed(4)}, Lon: ${longitude.toFixed(4)}`;
-  let locality: string | undefined;
-  let city: string | undefined;
-  let district: string | undefined;
-  let region: string | undefined;
-  let countryCode: string | undefined;
+  let fallbackAreaName = `Coordinates: ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
 
   if (Platform.OS === 'web') {
-    try {
-      // Lightweight OpenStreetMap Nominatim reverse geocode for Web environment
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`,
-        {
-          headers: { Accept: 'application/json', 'User-Agent': 'SafeHer-AI' },
-          signal: controller.signal,
-        }
-      );
-      clearTimeout(timeoutId);
-      if (res.ok) {
-        const data = await res.json();
-        const addr = data.address || {};
-        // Hierarchy prioritizing village / hamlet / suburb / neighbourhood / town / county over road
-        // Avoids road names (e.g. "Kottanathampatti - Kodukkampatti Road") becoming the primary query term
-        locality =
-          addr.village ||
-          addr.hamlet ||
-          addr.suburb ||
-          addr.neighbourhood ||
-          addr.isolated_dwelling ||
-          addr.town ||
-          addr.county ||
-          undefined;
-
-        city =
-          addr.city ||
-          (addr.town && addr.town !== locality ? addr.town : undefined) ||
-          addr.municipality ||
-          (addr.state_district && addr.state_district !== locality ? addr.state_district : undefined) ||
-          undefined;
-
-        district = addr.state_district || addr.county || undefined;
-        region = addr.state || undefined;
-        countryCode = addr.country_code ? addr.country_code.toUpperCase() : undefined;
-
-        // For human-readable areaName display: show locality/road, city, and region
-        const displayLocality = locality || addr.road;
-        const parts = [displayLocality, city, region].filter(Boolean) as string[];
-        if (parts.length > 0) {
-          areaName = parts.join(', ');
-        }
-      }
-    } catch {
-      areaName = `Coordinates: ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+    const nominatimDetails = await fetchNominatimReverse(latitude, longitude);
+    if (nominatimDetails) {
+      return nominatimDetails;
     }
-  } else {
-    try {
-      const addresses = await Location.reverseGeocodeAsync({ latitude, longitude });
-      if (addresses && addresses.length > 0) {
-        const addr = addresses[0];
-        const parts: string[] = [];
-
-        if (addr.name && addr.name !== addr.street) {
-          parts.push(addr.name);
-        }
-        if (addr.street) {
-          parts.push(addr.street);
-        }
-        if (addr.district || addr.subregion) {
-          const loc = addr.district || addr.subregion;
-          if (loc && !parts.includes(loc)) {
-            parts.push(loc);
-          }
-        }
-        if (addr.city && !parts.includes(addr.city)) {
-          parts.push(addr.city);
-        }
-        if (addr.region && !parts.includes(addr.region)) {
-          parts.push(addr.region);
-        }
-
-        if (parts.length > 0) {
-          areaName = parts.slice(0, 3).join(', ');
-        }
-
-        locality = addr.district || addr.subregion || (addr.name !== addr.street ? addr.name : undefined) || undefined;
-        city = addr.city || addr.subregion || undefined;
-        district = addr.district || undefined;
-        region = addr.region || undefined;
-        countryCode = addr.isoCountryCode || undefined;
-      }
-    } catch (error) {
-      console.log('Reverse geocoding error:', error);
-    }
+    return { areaName: fallbackAreaName };
   }
 
-  return {
-    areaName,
-    locality,
-    city,
-    district,
-    region,
-    countryCode,
-  };
+  // Native iOS / Android: Use expo-location first
+  try {
+    const addresses = await Location.reverseGeocodeAsync({ latitude, longitude });
+    if (addresses && addresses.length > 0) {
+      const addr = addresses[0];
+
+      // Exclude road names from locality
+      const isRoadLike = (val?: string | null) => {
+        if (!val) return false;
+        return /\b(road|rd|street|st|avenue|ave|lane|ln|drive|dr|highway|expressway|salai|marg)\b/i.test(val);
+      };
+
+      // Extract hierarchy without road pollution
+      const localityCandidate = addr.district || (addr.name && !isRoadLike(addr.name) && addr.name !== addr.street ? addr.name : undefined);
+      const locality = localityCandidate && localityCandidate !== addr.city ? localityCandidate : undefined;
+      const city = addr.city || (addr.subregion && addr.subregion !== locality ? addr.subregion : undefined);
+      const district = addr.subregion || (addr.district && addr.district !== locality ? addr.district : undefined);
+      const region = addr.region || undefined;
+      const countryCode = addr.isoCountryCode ? addr.isoCountryCode.toUpperCase() : undefined;
+
+      const displayLocality = locality || addr.street || addr.name;
+      const parts = [displayLocality, city, district, region].filter(Boolean) as string[];
+      const areaName = parts.length > 0 ? parts.slice(0, 3).join(', ') : fallbackAreaName;
+
+      // If expo-location gave minimal data (e.g. no locality and no city), try Nominatim fallback
+      if (!locality && !city && !district) {
+        const nominatimFallback = await fetchNominatimReverse(latitude, longitude);
+        if (nominatimFallback) {
+          return nominatimFallback;
+        }
+      }
+
+      return {
+        areaName,
+        locality: locality?.trim() || undefined,
+        city: city?.trim() || undefined,
+        district: district?.trim() || undefined,
+        region: region?.trim() || undefined,
+        countryCode,
+      };
+    }
+  } catch (error) {
+    console.log('Native reverse geocoding failed, trying Nominatim fallback:', error);
+  }
+
+  // Fallback to Nominatim if native geocoder threw an error or was unavailable
+  const nominatimFallback = await fetchNominatimReverse(latitude, longitude);
+  if (nominatimFallback) {
+    return nominatimFallback;
+  }
+
+  return { areaName: fallbackAreaName };
 }
 
 /**
@@ -230,40 +290,59 @@ export async function getAreaName(latitude: number, longitude: number): Promise<
 }
 
 /**
- * Dynamically builds a Google News RSS search query using the user's actual locality/city.
- * Pattern: {Locality} {City} police OR safety OR incident when:7d
- * Never hardcodes any municipality or locality.
+ * Dynamically builds a regional Google News RSS search query using the user's actual location hierarchy.
+ * Combines available settlement names (village/suburb/town) with broader administrative names (city/district).
+ * Never hardcodes any locality, city, district, or road.
+ * Example patterns:
+ * - ("{Village/Suburb}" OR "{City/District}") (police OR crime OR accident OR safety OR incident) when:7d
+ * - ("Camden" OR "London") (police OR crime OR accident OR safety OR incident) when:7d
+ * - "San Francisco" (police OR crime OR accident OR safety OR incident) when:7d
  */
 export function buildNewsSearchQuery(localityDetails: LocalityDetails): string | null {
   const { locality, city, district, region } = localityDetails;
 
-  const loc = locality?.trim();
-  const cit = city?.trim();
-  const dist = district?.trim();
-  const reg = region?.trim();
+  // Clean administrative suffixes like "District", "County", "Borough", "Mandal", "Taluk", "Tehsil"
+  // e.g. "Madurai District" -> "Madurai", "Travis County" -> "Travis"
+  const cleanAdmin = (str?: string) => {
+    if (!str) return undefined;
+    const cleaned = str.replace(/\b(district|county|borough|mandal|taluk|tehsil|subdivision)\b/gi, '').trim();
+    return cleaned.length > 0 ? cleaned : str.trim();
+  };
 
-  const locationParts: string[] = [];
+  const loc = cleanAdmin(locality);
+  const cit = cleanAdmin(city);
+  const dist = cleanAdmin(district);
+  const reg = cleanAdmin(region);
 
-  if (loc) {
-    locationParts.push(loc);
-  }
-  if (cit && cit.toLowerCase() !== loc?.toLowerCase()) {
-    locationParts.push(cit);
-  } else if (!cit && dist && dist.toLowerCase() !== loc?.toLowerCase()) {
-    locationParts.push(dist);
-  }
+  // Local settlement term (village, hamlet, suburb, neighbourhood, town)
+  const localName = loc || (cit && cit !== dist ? cit : undefined);
 
-  // If neither locality nor city could be found, fall back to region
-  if (locationParts.length === 0 && reg) {
-    locationParts.push(reg);
-  }
+  // Broader regional administrative term (district, county, city, or state)
+  const regionalName = (dist && dist !== localName)
+    ? dist
+    : (cit && cit !== localName)
+    ? cit
+    : (reg && reg !== localName)
+    ? reg
+    : undefined;
 
-  if (locationParts.length === 0) {
+  let geoTerm = '';
+  if (localName && regionalName && localName.toLowerCase() !== regionalName.toLowerCase()) {
+    // Both hyper-local and regional names are available: query both disjunctively
+    geoTerm = `("${localName}" OR "${regionalName}")`;
+  } else if (localName) {
+    geoTerm = `"${localName}"`;
+  } else if (regionalName) {
+    geoTerm = `"${regionalName}"`;
+  } else if (reg) {
+    geoTerm = `"${reg}"`;
+  } else {
     return null;
   }
 
-  const locationQuery = locationParts.join(' ');
-  return `${locationQuery} police OR safety OR incident when:7d`;
+  // Balanced safety keyword set for query
+  const safetyKeywords = '(police OR crime OR accident OR safety OR incident)';
+  return `${geoTerm} ${safetyKeywords} when:7d`;
 }
 
 export interface RawRssItem {
@@ -315,14 +394,13 @@ export function parseGoogleNewsRss(xmlText: string): RawRssItem[] {
     let cleanTitle = decodeEntities(rawTitle).trim();
     const cleanSource = decodeEntities(source).trim();
 
-    // In Google News, titles often end with ` - SourceName`. If source is missing from <source>, extract it.
+    // In Google News, titles often end with ` - SourceName`. Extract source if missing.
     if (!cleanSource && cleanTitle.includes(' - ')) {
       const parts = cleanTitle.split(' - ');
       source = parts.pop() || 'Regional News';
       cleanTitle = parts.join(' - ').trim();
     }
 
-    // Strip HTML tags from description and clean up
     const strippedDesc = decodeEntities(rawDesc.replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
 
     if (cleanTitle) {
@@ -340,19 +418,19 @@ export function parseGoogleNewsRss(xmlText: string): RawRssItem[] {
 }
 
 /**
- * Evaluates whether a news article is genuinely relevant to public/local safety.
- * Filters out unrelated political maneuvering, entertainment, sports, and business news.
+ * Evaluates whether a news article is genuinely relevant to public and personal safety.
+ * Excludes entertainment, sports, corporate stock market, and election campaign noise.
+ * Does NOT over-filter legitimate local safety advisories and incidents.
  */
 export function isSafetyRelevant(title: string, snippet?: string): boolean {
   const text = `${title} ${snippet || ''}`.toLowerCase();
 
-  // Exclusion patterns: topics that often mention "police" or "incident" in unrelated contexts
+  // Targeted exclusion patterns for non-safety domains
   const exclusionPatterns = [
-    /\b(movie|film|trailer|teaser|box office|actor|actress|bollywood|kollywood|hollywood|ott release|cinema)\b/i,
-    /\b(cricket|ipl|match|tournament|trophy|goal|wicket|badminton|tennis)\b/i,
-    /\b(stock|shares|sensex|nifty|market cap|quarterly profit|revenue surge|ipo|crypto|bitcoin)\b/i,
-    /\b(election rally|campaigning|bypoll|press conference|mla seat|cabinet reshuffle)\b/i,
-    /\b(anti-corruption bureau|vigilance raid|ed raid|cbi court|disproportionate assets|income tax raid)\b/i,
+    /\b(box office|movie trailer|trailer release|film teaser|ott release|cinema review|actor birthday|actress photoshoot|song promo|teaser out)\b/i,
+    /\b(cricket match|ipl score|ipl auction|badminton championship|tennis grand slam|football goal|fifa world cup|world cup qualifier)\b/i,
+    /\b(stock market|quarterly profit|quarterly revenue|share price|sensex|nifty|ipo allotment|crypto coin|bitcoin trading|mutual fund)\b/i,
+    /\b(election rally|campaigning|bypoll campaign|press briefing by|cabinet reshuffle|seat sharing|manifesto release)\b/i,
   ];
 
   for (const pattern of exclusionPatterns) {
@@ -361,17 +439,23 @@ export function isSafetyRelevant(title: string, snippet?: string): boolean {
     }
   }
 
-  // Positive relevance keywords for public and personal street safety
+  // Comprehensive public safety & personal security keywords
   const safetyKeywords = [
     'police', 'cop', 'patrol', 'advisory', 'alert', 'warning', 'checkpoint',
     'curfew', 'section 144', 'traffic advisory', 'diversion', 'road closure',
     'crowd control', 'stampede', 'evacuation', 'safety', 'emergency',
     'rescue', 'fire', 'accident', 'collision', 'crash', 'mishap',
-    'assault', 'harassment', 'eve-teasing', 'theft', 'robbery', 'burglary',
-    'snatching', 'crime', 'arrest', 'nabbed', 'apprehended', 'bust',
-    'investigation', 'fir', 'helpline', 'women safety', 'safe zone',
+    'assault', 'harassment', 'eve teasing', 'eve-teasing', 'theft', 'robbery', 'burglary',
+    'snatching', 'crime', 'arrest', 'arrested', 'nabbed', 'apprehended', 'bust',
+    'held', 'detained', 'booked', 'custody', 'remand', 'jailed', 'convicted', 'accused',
+    'investigation', 'fir', 'helpline', 'women safety', 'safe zone', 'women',
+    'missing', 'abduction', 'kidnap', 'found dead', 'homicide', 'murder',
+    'attack', 'attacked', 'weapon', 'stab', 'stabbed', 'injured', 'death', 'dead', 'killed', 'fatal',
+    'sexual', 'torture', 'abuse', 'molest', 'molestation', 'rape', 'violence', 'suicide', 'rammed',
     'flood', 'waterlogging', 'landslide', 'disaster', 'shelter', 'hazard',
-    'vigilance', 'security', 'law and order',
+    'storm', 'cyclone', 'tornado', 'earthquake', 'tsunami',
+    'vigilance', 'security', 'law and order', 'public safety', 'emergency services',
+    'ambulance', 'hospitalized', 'casualty',
   ];
 
   return safetyKeywords.some(keyword => text.includes(keyword));
@@ -379,10 +463,10 @@ export function isSafetyRelevant(title: string, snippet?: string): boolean {
 
 /**
  * Fetches recent regional public safety news from Google News RSS.
- * - Dynamically searches by locality and city
- * - Filters for articles in the last 7 days
- * - Strict relevance filtering for safety-critical information
- * - Limits articles returned to a small, relevant set (up to 5 for UI, 2-4 for AI)
+ * - Dynamic regional query based on location hierarchy.
+ * - Enforces last 7 days window (with 8-day buffer for timezone differences).
+ * - Balanced relevance filtering.
+ * - Web calls first-party serverless route (/api/safety-news); Native calls RSS directly.
  */
 export async function fetchRegionalSafetyNews(
   localityDetails: LocalityDetails
@@ -399,7 +483,7 @@ export async function fetchRegionalSafetyNews(
   }
 
   const countryCode = localityDetails.countryCode || 'IN';
-  const hl = countryCode === 'US' ? 'en-US' : countryCode === 'GB' ? 'en-GB' : 'en-IN';
+  const hl = countryCode === 'US' ? 'en-US' : countryCode === 'GB' ? 'en-GB' : countryCode === 'CA' ? 'en-CA' : countryCode === 'AU' ? 'en-AU' : 'en-IN';
   const gl = countryCode;
   const ceid = `${countryCode}:en`;
 
@@ -412,13 +496,11 @@ export async function fetchRegionalSafetyNews(
       // In Web, call the first-party serverless API route to eliminate browser CORS restrictions
       const apiUrl = `/api/safety-news?q=${encodeURIComponent(query)}&country=${encodeURIComponent(countryCode)}`;
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 sec timeout
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
 
       const response = await fetch(apiUrl, {
         signal: controller.signal,
-        headers: {
-          Accept: 'application/json',
-        },
+        headers: { Accept: 'application/json' },
       });
       clearTimeout(timeoutId);
 
@@ -434,14 +516,15 @@ export async function fetchRegionalSafetyNews(
       const json = await response.json();
       rawItems = (json.articles || []) as RawRssItem[];
     } else {
-      // In Native iOS/Android, fetch directly from Google News RSS (no browser CORS)
+      // In Native iOS/Android, fetch directly from Google News RSS
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 sec timeout
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
 
       const response = await fetch(url, {
         signal: controller.signal,
         headers: {
           Accept: 'application/rss+xml, application/xml, text/xml, */*',
+          'User-Agent': 'SafeHer-AI/1.0 (Safety Zone Service)',
         },
       });
       clearTimeout(timeoutId);
@@ -486,7 +569,6 @@ export async function fetchRegionalSafetyNews(
           const normSnippet = cleanSnippet.toLowerCase().replace(/[^a-z0-9]/g, '');
           const normTitle = raw.title.toLowerCase().replace(/[^a-z0-9]/g, '');
           const normSource = raw.source.toLowerCase().replace(/[^a-z0-9]/g, '');
-          // Omit snippet if it is just a mirror of the title and publication name
           if (normSnippet === normTitle || normSnippet === `${normTitle}${normSource}`) {
             cleanSnippet = undefined;
           }
@@ -525,34 +607,64 @@ export async function fetchRegionalSafetyNews(
 }
 
 /**
- * Queries the real OpenStreetMap Overpass API for nearby safety-critical infrastructure:
- * - Police stations & All-Women Police Stations
- * - Hospitals & medical facilities
- * - Major transport hubs
- * - Street lighting indications
+ * Builds the comprehensive Overpass QL query including both node and way elements
+ * for police, medical, fire, transport, and street lighting.
+ */
+function buildOverpassQuery(lat: number, lon: number, radiusMeters: number): string {
+  return `
+    [out:json][timeout:9];
+    (
+      node["amenity"="police"](around:${radiusMeters},${lat},${lon});
+      way["amenity"="police"](around:${radiusMeters},${lat},${lon});
+      node["amenity"="hospital"](around:${radiusMeters},${lat},${lon});
+      way["amenity"="hospital"](around:${radiusMeters},${lat},${lon});
+      node["amenity"="clinic"](around:${radiusMeters},${lat},${lon});
+      way["amenity"="clinic"](around:${radiusMeters},${lat},${lon});
+      node["emergency"="ambulance_station"](around:${radiusMeters},${lat},${lon});
+      way["emergency"="ambulance_station"](around:${radiusMeters},${lat},${lon});
+      node["amenity"="fire_station"](around:${radiusMeters},${lat},${lon});
+      way["amenity"="fire_station"](around:${radiusMeters},${lat},${lon});
+      node["railway"="station"](around:${radiusMeters},${lat},${lon});
+      way["railway"="station"](around:${radiusMeters},${lat},${lon});
+      node["amenity"="bus_station"](around:${radiusMeters},${lat},${lon});
+      way["amenity"="bus_station"](around:${radiusMeters},${lat},${lon});
+      node["highway"="bus_stop"](around:${radiusMeters},${lat},${lon});
+      way["highway"]["lit"](around:500,${lat},${lon});
+    );
+    out center 75;
+  `;
+}
+
+/**
+ * Lightweight fallback Overpass query focusing strictly on critical emergency facilities.
+ */
+function buildFallbackOverpassQuery(lat: number, lon: number, radiusMeters: number): string {
+  return `
+    [out:json][timeout:6];
+    (
+      node["amenity"="police"](around:${radiusMeters},${lat},${lon});
+      way["amenity"="police"](around:${radiusMeters},${lat},${lon});
+      node["amenity"="hospital"](around:${radiusMeters},${lat},${lon});
+      way["amenity"="hospital"](around:${radiusMeters},${lat},${lon});
+      node["amenity"="clinic"](around:${radiusMeters},${lat},${lon});
+      way["amenity"="clinic"](around:${radiusMeters},${lat},${lon});
+    );
+    out center 40;
+  `;
+}
+
+/**
+ * Queries real OpenStreetMap Overpass API for nearby safety-critical infrastructure.
+ * - Uses current GPS coordinates dynamically.
+ * - Multi-endpoint failover across primary and fallback mirrors.
+ * - Correctly parses both node and way/relation elements (center.lat / center.lon).
+ * - Never returns fake or hallucinated facilities.
  */
 export async function fetchNearbySafetyInfrastructure(
   latitude: number,
   longitude: number,
   searchRadiusMeters: number = 2000
 ): Promise<SafetyInfrastructureData> {
-  const query = `
-    [out:json][timeout:10];
-    (
-      node["amenity"="police"](around:${searchRadiusMeters},${latitude},${longitude});
-      way["amenity"="police"](around:${searchRadiusMeters},${latitude},${longitude});
-      node["amenity"="hospital"](around:${searchRadiusMeters},${latitude},${longitude});
-      way["amenity"="hospital"](around:${searchRadiusMeters},${latitude},${longitude});
-      node["amenity"="clinic"](around:${searchRadiusMeters},${latitude},${longitude});
-      node["emergency"="ambulance_station"](around:${searchRadiusMeters},${latitude},${longitude});
-      node["railway"="station"](around:${searchRadiusMeters},${latitude},${longitude});
-      node["amenity"="bus_station"](around:${searchRadiusMeters},${latitude},${longitude});
-      node["highway"="bus_stop"](around:${searchRadiusMeters},${latitude},${longitude});
-      way["highway"]["lit"](around:500,${latitude},${longitude});
-    );
-    out center 45;
-  `;
-
   const endpoints = [
     'https://overpass-api.de/api/interpreter',
     'https://lz4.overpass-api.de/api/interpreter',
@@ -560,29 +672,77 @@ export async function fetchNearbySafetyInfrastructure(
 
   let rawData: any = null;
   let fetchError: string | null = null;
+  let lightingQueried = false;
 
+  // 1. Try comprehensive query across available endpoints
+  const comprehensiveQuery = buildOverpassQuery(latitude, longitude, searchRadiusMeters);
   for (const endpoint of endpoints) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 9000); // 9 sec timeout
+      const timeoutId = setTimeout(() => controller.abort(), 7500); // 7.5s per endpoint
 
       const response = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `data=${encodeURIComponent(query)}`,
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json, */*',
+          'User-Agent': 'SafeHer-AI/1.0 (Safety Zone Assessment Service)',
+        },
+        body: `data=${encodeURIComponent(comprehensiveQuery)}`,
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
 
       if (response.ok) {
-        rawData = await response.json();
-        break;
+        const json = await response.json();
+        if (json && Array.isArray(json.elements)) {
+          rawData = json;
+          lightingQueried = true;
+          break;
+        }
+      } else {
+        fetchError = `HTTP ${response.status} from ${endpoint}`;
       }
     } catch (err: any) {
-      fetchError = err?.message || 'Network timeout querying Overpass';
+      fetchError = err?.message || 'Endpoint timeout or network failure';
     }
   }
 
+  // 2. If comprehensive query failed, try lean emergency fallback query
+  if (!rawData || !Array.isArray(rawData.elements)) {
+    const fallbackQuery = buildFallbackOverpassQuery(latitude, longitude, Math.min(searchRadiusMeters, 1500));
+    for (const endpoint of [endpoints[1], endpoints[0]]) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5500);
+
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Accept': 'application/json, */*',
+            'User-Agent': 'SafeHer-AI/1.0 (Safety Zone Assessment Service)',
+          },
+          body: `data=${encodeURIComponent(fallbackQuery)}`,
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+          const json = await response.json();
+          if (json && Array.isArray(json.elements)) {
+            rawData = json;
+            lightingQueried = false;
+            break;
+          }
+        }
+      } catch (err: any) {
+        fetchError = err?.message || 'Fallback endpoint timeout';
+      }
+    }
+  }
+
+  // 3. If all attempts failed: return clean failure state without fake facilities
   if (!rawData || !Array.isArray(rawData.elements)) {
     return {
       nearbyPoliceStations: [],
@@ -592,11 +752,12 @@ export async function fetchNearbySafetyInfrastructure(
       nearbyLighting: {
         litCount: 0,
         unlitCount: 0,
-        summary: 'Lighting data unavailable (network timeout or offline).',
+        summary: 'Street lighting data is temporarily unavailable.',
+        fetchedSuccessfully: false,
       },
       searchRadiusMeters,
       fetchedSuccessfully: false,
-      errorMessage: fetchError || 'Unable to load real-time OpenStreetMap safety infrastructure.',
+      errorMessage: fetchError ? `Safety infrastructure data is temporarily unavailable (${fetchError})` : 'Safety infrastructure data is temporarily unavailable.',
     };
   }
 
@@ -608,11 +769,12 @@ export async function fetchNearbySafetyInfrastructure(
   let unlitWays = 0;
 
   for (const el of rawData.elements) {
-    const lat = el.lat ?? el.center?.lat;
-    const lon = el.lon ?? el.center?.lon;
+    // Robust coordinate resolution: node has el.lat / el.lon; way and relation have el.center.lat / el.center.lon
+    const lat = typeof el.lat === 'number' ? el.lat : el.center?.lat;
+    const lon = typeof el.lon === 'number' ? el.lon : el.center?.lon;
     const tags = el.tags || {};
 
-    // Check lighting tags
+    // Check street lighting tags
     if (tags.lit === 'yes' || tags.lit === '24/7') {
       litWays++;
     } else if (tags.lit === 'no') {
@@ -623,14 +785,15 @@ export async function fetchNearbySafetyInfrastructure(
       continue;
     }
 
+    // Real distance calculation based on user's actual GPS coordinates
     const distKm = getDistanceKm(latitude, longitude, lat, lon);
     const distanceMeters = Math.round(distKm * 1000);
     const distanceText = formatDistance(distanceMeters);
 
-    // Police Stations
+    // Police Stations & Women's Police Stations
     if (tags.amenity === 'police') {
       const isWomen = isWomenPoliceStation(tags.name, tags);
-      const facName = tags.name || (isWomen ? "All-Women Police Station" : "Police Station");
+      const facName = tags.name || (isWomen ? 'All-Women Police Station' : 'Police Station');
       const fac: NearbyFacility = {
         id: el.id,
         name: facName,
@@ -647,9 +810,9 @@ export async function fetchNearbySafetyInfrastructure(
       }
       police.push(fac);
     }
-    // Hospitals & Medical
+    // Hospitals, Clinics & Ambulance Stations
     else if (tags.amenity === 'hospital' || tags.amenity === 'clinic' || tags.emergency === 'ambulance_station') {
-      const facName = tags.name || (tags.amenity === 'hospital' ? 'Hospital' : 'Medical Clinic');
+      const facName = tags.name || (tags.amenity === 'hospital' ? 'Hospital' : tags.emergency === 'ambulance_station' ? 'Ambulance Station' : 'Medical Clinic');
       hospitals.push({
         id: el.id,
         name: facName,
@@ -660,7 +823,20 @@ export async function fetchNearbySafetyInfrastructure(
         longitude: lon,
       });
     }
-    // Transport Hubs
+    // Fire Stations
+    else if (tags.amenity === 'fire_station') {
+      const facName = tags.name || 'Fire Station';
+      hospitals.push({
+        id: el.id,
+        name: facName,
+        type: 'other',
+        distanceMeters,
+        distanceText,
+        latitude: lat,
+        longitude: lon,
+      });
+    }
+    // Transport Hubs (Railway Stations, Bus Stations, Bus Stops)
     else if (tags.railway === 'station' || tags.amenity === 'bus_station' || tags.highway === 'bus_stop') {
       let defaultLabel = 'Bus Stop';
       if (tags.railway === 'station') defaultLabel = 'Railway Station';
@@ -679,14 +855,16 @@ export async function fetchNearbySafetyInfrastructure(
     }
   }
 
-  // Sort by closest proximity
+  // Sort facilities by closest proximity
   police.sort((a, b) => a.distanceMeters - b.distanceMeters);
   womenPolice.sort((a, b) => a.distanceMeters - b.distanceMeters);
   hospitals.sort((a, b) => a.distanceMeters - b.distanceMeters);
   transport.sort((a, b) => a.distanceMeters - b.distanceMeters);
 
   let lightingSummary = 'No street lighting tags recorded within 500m.';
-  if (litWays > 0 && unlitWays === 0) {
+  if (!lightingQueried) {
+    lightingSummary = 'Street lighting data is temporarily unavailable.';
+  } else if (litWays > 0 && unlitWays === 0) {
     lightingSummary = `${litWays} lit road segments detected within 500m.`;
   } else if (litWays > 0 && unlitWays > 0) {
     lightingSummary = `Mixed street lighting (${litWays} lit, ${unlitWays} unlit segments within 500m).`;
@@ -703,6 +881,7 @@ export async function fetchNearbySafetyInfrastructure(
       litCount: litWays,
       unlitCount: unlitWays,
       summary: lightingSummary,
+      fetchedSuccessfully: lightingQueried,
     },
     searchRadiusMeters,
     fetchedSuccessfully: true,
@@ -711,24 +890,44 @@ export async function fetchNearbySafetyInfrastructure(
 
 /**
  * Analyzes the user's current spatial and environmental safety context.
- * Adheres strictly to the rule: NEVER hallucinate fake crime statistics.
- * Ingests REAL OpenStreetMap infrastructure data.
+ * Ingests real OpenStreetMap infrastructure and real Google News RSS articles.
+ * Never invents, assumes, or hallucinates fake crime statistics or facilities.
+ * Dynamically adapts to any coordinates on Earth.
  */
 export async function analyzeSafetyZone(
   latitude: number,
   longitude: number,
-  accuracy: number | null
+  accuracy: number | null,
+  forceRefresh: boolean = false
 ): Promise<SafetyZoneAssessment> {
-  const evaluatedAt = new Date().toLocaleTimeString([], {
+  const now = Date.now();
+
+  // In-memory proximity cache check: reuse if within 50m and 2 minutes, unless forceRefresh
+  if (
+    !forceRefresh &&
+    lastAssessmentCache &&
+    now - lastAssessmentCache.timestamp < CACHE_TTL_MS
+  ) {
+    const distFromCache = getDistanceKm(
+      latitude,
+      longitude,
+      lastAssessmentCache.latitude,
+      lastAssessmentCache.longitude
+    );
+    if (distFromCache < CACHE_DISTANCE_THRESHOLD_KM) {
+      return lastAssessmentCache.assessment;
+    }
+  }
+
+  const currentDate = new Date();
+  const currentHour = currentDate.getHours();
+  const isNighttime = currentHour >= 22 || currentHour < 5; // 10 PM - 5 AM
+  const timeOfDay = `${currentDate.getHours().toString().padStart(2, '0')}:${currentDate.getMinutes().toString().padStart(2, '0')}`;
+  const evaluatedAt = currentDate.toLocaleTimeString([], {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
   });
-
-  const now = new Date();
-  const currentHour = now.getHours();
-  const isNighttime = currentHour >= 22 || currentHour < 5; // 10 PM - 5 AM
-  const timeOfDay = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
 
   // 1. Resolve structured location & locality details
   const localityDetails = await getLocalityDetails(latitude, longitude);
@@ -740,21 +939,24 @@ export async function analyzeSafetyZone(
     fetchRegionalSafetyNews(localityDetails),
   ]);
 
-  // 3. Collect verified real local safe places
+  // 3. Collect verified real local safe places (exclude default demo places)
   let savedPlaces: CustomSafePlace[] = [];
   try {
-    savedPlaces = await getCustomSafePlaces();
+    const allPlaces = await getCustomSafePlaces();
+    savedPlaces = allPlaces.filter(p => !p.id.startsWith('demo-'));
   } catch (err) {
-    console.warn('Failed to load saved safe places in safety zone analysis:', err);
+    console.warn('Failed to load saved safe places:', err);
   }
 
   // 4. Record consulted sources
   const sourcesConsulted = [
     'Device GPS Hardware',
-    'OpenStreetMap Overpass API (Real Infrastructure)',
+    infrastructure.fetchedSuccessfully
+      ? 'OpenStreetMap Overpass API (Real Infrastructure)'
+      : 'OpenStreetMap Overpass API (Temporarily Unavailable)',
     safetyNews.fetchedSuccessfully
       ? 'Google News RSS (Recent Public Safety Advisories & Incidents)'
-      : 'Google News RSS (Attempted - Temporarily Unavailable)',
+      : 'Google News RSS (Temporarily Unavailable)',
     'Local Environmental Context (Time of Day)',
     savedPlaces.length > 0 ? 'User Verified Safe Places' : null,
   ].filter(Boolean) as string[];
@@ -765,17 +967,21 @@ export async function analyzeSafetyZone(
   // Build structured summary for Gemini - Layer 1
   const policeSummary = infrastructure.nearbyPoliceStations.length > 0
     ? infrastructure.nearbyPoliceStations.map(p => `${p.name} (${p.distanceText}${p.isAllWomen ? ' - All-Women PS' : ''})`).join(', ')
-    : 'No police station found within 2 km radius';
+    : 'No police station mapped within 2 km radius in OpenStreetMap';
+
+  const womenPoliceSummary = infrastructure.nearbyWomenPoliceStations.length > 0
+    ? infrastructure.nearbyWomenPoliceStations.map(w => `${w.name} (${w.distanceText})`).join(', ')
+    : 'None detected in 2 km radius';
 
   const hospitalSummary = infrastructure.nearbyHospitals.length > 0
     ? infrastructure.nearbyHospitals.map(h => `${h.name} (${h.distanceText})`).join(', ')
-    : 'No hospital found within 2 km radius';
+    : 'No hospital or clinic mapped within 2 km radius in OpenStreetMap';
 
   const transportSummary = infrastructure.nearbyTransportHubs.length > 0
     ? infrastructure.nearbyTransportHubs.map(t => `${t.name} (${t.distanceText})`).join(', ')
-    : 'No major transport hubs found within 2 km radius';
+    : 'No major transport hubs mapped within 2 km radius in OpenStreetMap';
 
-  // Build structured summary for Gemini - Layer 2 (2-4 relevant articles)
+  // Build structured summary for Gemini - Layer 2 (Up to 4 relevant articles)
   let newsSummaryText = '';
   if (safetyNews.fetchedSuccessfully) {
     if (safetyNews.articles.length > 0) {
@@ -792,7 +998,7 @@ export async function analyzeSafetyZone(
       newsSummaryText = 'No recent public safety advisories or incidents were found in regional media for this area (past 7 days).';
     }
   } else {
-    newsSummaryText = 'Regional safety news feed was temporarily unavailable. Rely strictly on infrastructure, time of day, and environmental context.';
+    newsSummaryText = 'Regional safety news feed was temporarily unavailable.';
   }
 
   // 5. Check for Gemini API key
@@ -800,24 +1006,26 @@ export async function analyzeSafetyZone(
 
   if (apiKey) {
     try {
-      const roundedLat = Math.round(latitude * 1000) / 1000;
-      const roundedLon = Math.round(longitude * 1000) / 1000;
-
       const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
 
       const systemInstruction = `You are SafeHer AI's Safety Zone Assessment Engine.
 Your task is to analyze the provided REAL spatial, infrastructure, and recent regional safety news context, and return an objective, reassuring, and practical safety evaluation.
 
 INPUT CONTEXT:
-- Area / Locality: ${areaName}
-- Generalized Coordinates: Latitude ${roundedLat}, Longitude ${roundedLon}
-- Local Time: ${timeOfDay} (${isNighttime ? 'Nighttime / Low Visibility' : 'Daylight Hours'})
+- Area Display: ${areaName}
+- Locality (Village/Suburb/Neighbourhood): ${localityDetails.locality || 'Not specified'}
+- City / Town: ${localityDetails.city || 'Not specified'}
+- District / County: ${localityDetails.district || 'Not specified'}
+- State / Region: ${localityDetails.region || 'Not specified'}
+- Country: ${localityDetails.countryCode || 'Not specified'}
+- GPS Coordinates: Latitude ${latitude.toFixed(4)}, Longitude ${longitude.toFixed(4)}
 - GPS Accuracy: ${accuracy ? Math.round(accuracy) + ' meters' : 'Moderate'}
+- Local Time: ${timeOfDay} (${isNighttime ? 'Nighttime / Low Visibility' : 'Daylight Hours'})
 - User-Saved Safe Havens: ${savedPlaces.length} registered
 
 REAL OPENSTREETMAP SAFETY INFRASTRUCTURE (2000m Radius - Layer 1):
 - Police Stations: ${policeSummary}
-- All-Women Police Stations: ${infrastructure.nearbyWomenPoliceStations.length > 0 ? infrastructure.nearbyWomenPoliceStations.map(w => `${w.name} (${w.distanceText})`).join(', ') : 'None detected in 2 km radius'}
+- All-Women Police Stations: ${womenPoliceSummary}
 - Hospitals & Emergency Clinics: ${hospitalSummary}
 - Transport Hubs: ${transportSummary}
 - Street Lighting Context: ${infrastructure.nearbyLighting.summary}
@@ -825,20 +1033,26 @@ REAL OPENSTREETMAP SAFETY INFRASTRUCTURE (2000m Radius - Layer 1):
 REAL RECENT REGIONAL SAFETY NEWS (Layer 2 - Past 7 Days via Google News RSS):
 ${newsSummaryText}
 
-CRITICAL RULES:
-1. Synthesize BOTH the OpenStreetMap infrastructure data AND the recent regional safety news context together with local time, day/night visibility, and GPS accuracy.
-2. Nearby emergency facilities alone must NOT be treated as proof that an area is definitely safe or dangerous.
-3. The presence of nearby police stations or hospitals provides emergency recourse and safety buffering; their absence means emergency response may take longer.
+CRITICAL SAFETY & DATA INTEGRITY RULES:
+1. Synthesize BOTH OpenStreetMap infrastructure data AND recent regional safety news together with local time, day/night visibility, and GPS accuracy.
+2. DISTINGUISH THREE DATA STATES:
+   - State A (Real data found): Verified emergency facilities (police/hospital) or active infrastructure mapped.
+   - State B (Valid source returned zero mapped results): OpenStreetMap query succeeded, but 0 police stations and 0 medical facilities exist within 2 km. In this state, emergency response times may be extended.
+   - State C (Data source unavailable / timeout): OpenStreetMap or news feed request failed or timed out.
+3. MANDATORY SAFETY LEVEL CONSTRAINTS:
+   - NEVER assign "lower_concern" if OpenStreetMap infrastructure data is unavailable (State C), OR if zero emergency facilities (police + hospital/clinic) are mapped within 2 km (State B), OR if it is nighttime (10 PM - 5 AM).
+   - In any of these situations (State B, State C, or nighttime), the MINIMUM safety level MUST BE "caution".
+   - You may ONLY assign "lower_concern" during daylight hours when verified emergency infrastructure is mapped nearby (State A) and no active incident advisories exist.
+   - DO NOT treat "no data", "source unavailable", or "zero mapped facilities" as evidence that an area is safe.
 4. REGIONAL SAFETY NEWS RULES:
-   - A single news headline must NOT automatically mean that the entire area or neighborhood is dangerous. News reports isolated occurrences or advisories.
-   - If there are no relevant recent articles (or if news context indicates none were found), explicitly state in your reason: "No recent public safety advisories or incidents were found in regional media for this area (past 7 days)."
-   - Do NOT interpret "no news" as proof that the area is definitely safe.
+   - A single news headline does not automatically make an entire region dangerous; news reports isolated occurrences or advisories.
+   - If no relevant recent articles were found, state: "No recent public safety advisories or incidents found for this area in the past 7 days."
+   - DO NOT interpret "no news found" as proof that no incidents occurred or that the area is definitely safe.
    - Never invent, assume, or hallucinate crime statistics, numbers, or incidents.
-   - Never claim an area is definitely safe or definitely dangerous.
 5. Your safetyLevel must be one of:
-   - "lower_concern": Daytime with accessible infrastructure, active transit, or close emergency services, with no active emergency advisories.
-   - "caution": Late night hours (10 PM - 5 AM), low lighting, isolated areas, long distance from emergency facilities, or minor crowd/traffic/safety advisories.
-   - "higher_concern": Extreme risk combination (e.g. late night + isolated + no emergency facilities nearby, or urgent active safety advisory in immediate vicinity).
+   - "lower_concern": Daytime with verified accessible emergency infrastructure nearby and no active emergency advisories.
+   - "caution": Areas with no mapped emergency facilities within 2 km, unavailable safety data, late-night hours (10 PM - 5 AM), low lighting, or minor public advisories.
+   - "higher_concern": Urgent active safety advisory in immediate vicinity, or high vulnerability combination (e.g. late night + isolated with zero emergency recourse).
 6. "shortReason": A concise 1-2 sentence explanation reflecting the REAL infrastructure, temporal context, and regional safety news context.
 7. "recommendation": A practical, realistic safety recommendation.
 8. Return ONLY a valid raw JSON object matching the schema below. Do not wrap in markdown backticks.
@@ -857,7 +1071,7 @@ JSON Schema:
           contents: [
             {
               role: 'user',
-              parts: [{ text: `Analyze safety context for ${areaName} based on available infrastructure data and recent regional safety news.` }],
+              parts: [{ text: `Analyze safety context for ${areaName} (Lat ${latitude.toFixed(4)}, Lon ${longitude.toFixed(4)}) based on available infrastructure data and recent regional safety news.` }],
             },
           ],
           systemInstruction: { parts: [{ text: systemInstruction }] },
@@ -871,15 +1085,35 @@ JSON Schema:
         if (rawText) {
           const parsed = JSON.parse(rawText.trim());
           const validLevels: SafetyLevel[] = ['lower_concern', 'caution', 'higher_concern'];
-          const finalLevel: SafetyLevel = validLevels.includes(parsed.safetyLevel)
+          let finalLevel: SafetyLevel = validLevels.includes(parsed.safetyLevel)
             ? parsed.safetyLevel
             : isNighttime
               ? 'caution'
               : 'lower_concern';
 
-          return {
+          // SAFETY GUARD: Clamp to 'caution' if infrastructure unavailable, or 0 emergency facilities mapped, or nighttime
+          const totalEmergencyFacilities =
+            infrastructure.nearbyPoliceStations.length + infrastructure.nearbyHospitals.length;
+          const hasMissingOrZeroData =
+            !infrastructure.fetchedSuccessfully ||
+            totalEmergencyFacilities === 0 ||
+            !safetyNews.fetchedSuccessfully;
+
+          let finalReason = parsed.shortReason;
+          if (finalLevel === 'lower_concern' && (hasMissingOrZeroData || isNighttime)) {
+            finalLevel = 'caution';
+            if (!infrastructure.fetchedSuccessfully) {
+              finalReason = 'Safety infrastructure data is temporarily unavailable; emergency response availability could not be verified.';
+            } else if (totalEmergencyFacilities === 0) {
+              finalReason = 'No mapped police stations or medical clinics found within 2 km; emergency response access may be extended.';
+            } else if (isNighttime) {
+              finalReason = 'Late-night hours present reduced natural lighting and limited visibility.';
+            }
+          }
+
+          const assessment: SafetyZoneAssessment = {
             safetyLevel: finalLevel,
-            shortReason: parsed.shortReason || (isNighttime ? 'Late night hours present reduced natural lighting.' : 'Daytime hours with active surrounding transit.'),
+            shortReason: finalReason || (isNighttime ? 'Late night hours present reduced natural lighting.' : 'Daytime hours with active surrounding transit.'),
             recommendation: parsed.recommendation || 'Stay alert and keep emergency contacts easily accessible.',
             areaName,
             evaluatedAt,
@@ -901,6 +1135,15 @@ JSON Schema:
               verifiedSafePlacesCount: savedPlaces.length,
             },
           };
+
+          lastAssessmentCache = {
+            latitude,
+            longitude,
+            timestamp: Date.now(),
+            assessment,
+          };
+
+          return assessment;
         }
       }
     } catch (apiError) {
@@ -911,6 +1154,8 @@ JSON Schema:
   // 6. Local Rule-Based Engine (Offline or no Gemini API key)
   const closestPolice = infrastructure.nearbyPoliceStations[0];
   const closestHospital = infrastructure.nearbyHospitals[0];
+  const totalEmergencyFacilities =
+    infrastructure.nearbyPoliceStations.length + infrastructure.nearbyHospitals.length;
 
   let localReason = '';
   let localRec = '';
@@ -925,9 +1170,20 @@ JSON Schema:
       localReason += ` No police stations detected within 2 km.`;
     }
     localRec = 'Walk along well-lit primary corridors, avoid isolated shortcuts, and consider sharing your live location with trusted contacts.';
+  } else if (!infrastructure.fetchedSuccessfully) {
+    // State C: Data source unavailable / timeout
+    localLevel = 'caution';
+    localReason = `Daytime conditions. Safety infrastructure data is temporarily unavailable; local emergency response availability could not be verified.`;
+    localRec = 'Stay observant of your surroundings, stick to known routes, and keep your emergency contacts accessible.';
+  } else if (totalEmergencyFacilities === 0) {
+    // State B: Valid source returned zero mapped emergency facilities
+    localLevel = 'caution';
+    localReason = `Daytime conditions. No mapped police stations or medical facilities found within 2 km in OpenStreetMap; emergency response access may be extended.`;
+    localRec = 'Maintain situational awareness, avoid unfamiliar isolated areas, and have emergency contacts ready.';
   } else {
+    // State A: Real emergency infrastructure data found in daytime
     localLevel = 'lower_concern';
-    localReason = `Daytime conditions with regular transit activity.`;
+    localReason = `Daytime conditions with accessible emergency infrastructure.`;
     if (closestPolice) {
       localReason += ` Nearby emergency response: ${closestPolice.name} is ${closestPolice.distanceText}.`;
     }
@@ -941,10 +1197,12 @@ JSON Schema:
   if (safetyNews.fetchedSuccessfully && safetyNews.articles.length > 0) {
     localReason += ` Regional advisory: "${safetyNews.articles[0].title}".`;
   } else if (safetyNews.fetchedSuccessfully && safetyNews.articles.length === 0) {
-    localReason += ` No recent public safety advisories or incidents were found in regional media for this area (past 7 days).`;
+    localReason += ` No recent public safety advisories or incidents found for this area in the past 7 days.`;
+  } else if (!safetyNews.fetchedSuccessfully) {
+    localReason += ` Regional safety news feed is temporarily unavailable.`;
   }
 
-  return {
+  const localAssessment: SafetyZoneAssessment = {
     safetyLevel: localLevel,
     shortReason: localReason,
     recommendation: localRec,
@@ -968,4 +1226,13 @@ JSON Schema:
       verifiedSafePlacesCount: savedPlaces.length,
     },
   };
+
+  lastAssessmentCache = {
+    latitude,
+    longitude,
+    timestamp: Date.now(),
+    assessment: localAssessment,
+  };
+
+  return localAssessment;
 }

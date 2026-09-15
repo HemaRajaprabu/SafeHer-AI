@@ -1,7 +1,7 @@
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { ThemedText } from '@/components/themed-text';
@@ -9,70 +9,234 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing, MaxContentWidth, BottomTabInset } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { router, useFocusEffect } from 'expo-router';
+import { useLocation } from '@/hooks/use-location';
+import {
+  evaluateLocationSafety,
+  getDistanceKm,
+  LocationSafetyResult,
+} from '@/services/location-safety';
+
+function getSafetyStatusFromResult(result: LocationSafetyResult): {
+  status: 'safe' | 'medium' | 'high';
+  message: string;
+  color: string;
+} {
+  if (result.safetyLevel === 'high' || result.riskScore >= 70) {
+    return {
+      status: 'high',
+      message: 'High risk detected. Consider activating SOS and moving to a safer location.',
+      color: '#EF4444',
+    };
+  }
+  if (result.safetyLevel === 'caution' || result.riskScore >= 40) {
+    return {
+      status: 'medium',
+      message: 'Moderate risk detected. Stay alert and aware of your surroundings.',
+      color: '#F59E0B',
+    };
+  }
+  return {
+    status: 'safe',
+    message: 'Low risk detected. Stay aware of your surroundings.',
+    color: '#10B981',
+  };
+}
+
+function mapRiskLevelToStatus(level: string): {
+  status: 'safe' | 'medium' | 'high';
+  message: string;
+  color: string;
+} {
+  if (level === 'high') {
+    return {
+      status: 'high',
+      message: 'High risk detected. Consider activating SOS and moving to a safer location.',
+      color: '#EF4444',
+    };
+  }
+  if (level === 'medium' || level === 'caution') {
+    return {
+      status: 'medium',
+      message: 'Moderate risk detected. Stay alert and aware of your surroundings.',
+      color: '#F59E0B',
+    };
+  }
+  return {
+    status: 'safe',
+    message: 'Low risk detected. Stay aware of your surroundings.',
+    color: '#10B981',
+  };
+}
 
 export default function ExploreScreen() {
   const theme = useTheme();
   const isDark = theme.text === '#ffffff';
   const cardBg = isDark ? '#1E293B' : '#FFFFFF';
 
+  const {
+    location,
+    error: locationError,
+  } = useLocation();
+
   const [safetyState, setSafetyState] = useState<{
-    status: 'safe' | 'low' | 'medium' | 'high' | 'emergency';
+    status: 'safe' | 'medium' | 'high' | 'loading';
     message: string;
     color: string;
   }>({
-    status: 'safe',
-    message: 'You are currently in normal safety mode.',
-    color: '#10B981',
+    status: 'loading',
+    message: 'Checking your current safety status...',
+    color: '#94A3B8',
   });
 
+  const lastAnalyzedCoords = useRef<{ latitude: number; longitude: number; timestamp: number } | null>(null);
+  const isAnalyzingRef = useRef<boolean>(false);
+
+  // Load cached status or SOS state immediately on focus
   useFocusEffect(
     useCallback(() => {
-      const loadSafetyState = async () => {
+      let isMounted = true;
+
+      const checkCurrentStatus = async () => {
         try {
           const isSOSActive = await AsyncStorage.getItem('isSOSActive');
           if (isSOSActive === 'true') {
-            setSafetyState({
-              status: 'emergency',
-              message: 'Emergency mode is active.',
-              color: '#DC2626',
-            });
+            if (isMounted) {
+              setSafetyState({
+                status: 'high',
+                message: 'High risk detected. Consider activating SOS and moving to a safer location.',
+                color: '#EF4444',
+              });
+            }
             return;
           }
 
+          const cached = await AsyncStorage.getItem('lastLocationSafetyResult');
+          if (cached && isMounted) {
+            const parsed = JSON.parse(cached);
+            if (parsed?.result) {
+              setSafetyState(getSafetyStatusFromResult(parsed.result));
+              return;
+            }
+          }
+
           const level = await AsyncStorage.getItem('currentRiskLevel');
-          if (level === 'high') {
-            setSafetyState({
-              status: 'high',
-              message: 'High risk detected. Consider activating SOS.',
-              color: '#EF4444',
-            });
-          } else if (level === 'medium') {
-            setSafetyState({
-              status: 'medium',
-              message: 'Increased risk detected. Stay alert.',
-              color: '#F59E0B',
-            });
-          } else if (level === 'low') {
-            setSafetyState({
-              status: 'low',
-              message: 'Low risk detected. Stay aware of your surroundings.',
-              color: '#10B981',
-            });
-          } else {
-            setSafetyState({
-              status: 'safe',
-              message: 'You are currently in normal safety mode.',
-              color: '#10B981',
-            });
+          if (level && isMounted) {
+            setSafetyState(mapRiskLevelToStatus(level));
           }
         } catch (e) {
           console.log('Error reading safety state:', e);
         }
       };
 
-      loadSafetyState();
+      checkCurrentStatus();
+
+      return () => {
+        isMounted = false;
+      };
     }, [])
   );
+
+  // Automatically perform location safety analysis when location is available
+  useEffect(() => {
+    let isMounted = true;
+
+    const runAnalysis = async () => {
+      if (!location) {
+        if (locationError && isMounted) {
+          setSafetyState((prev) =>
+            prev.status === 'loading'
+              ? {
+                  status: 'loading',
+                  message: 'Checking your current safety status...',
+                  color: '#94A3B8',
+                }
+              : prev
+          );
+        }
+        return;
+      }
+
+      const { latitude, longitude } = location;
+
+      if (lastAnalyzedCoords.current) {
+        const distanceKm = getDistanceKm(
+          latitude,
+          longitude,
+          lastAnalyzedCoords.current.latitude,
+          lastAnalyzedCoords.current.longitude
+        );
+        const distanceMeters = distanceKm * 1000;
+        const isStale = Date.now() - lastAnalyzedCoords.current.timestamp > 2 * 60 * 1000; // 2 minutes
+
+        if (distanceMeters < 100 && !isStale) {
+          return;
+        }
+      }
+
+      if (isAnalyzingRef.current) return;
+      isAnalyzingRef.current = true;
+
+      try {
+        const isSOSActive = await AsyncStorage.getItem('isSOSActive');
+        if (isSOSActive === 'true') {
+          if (isMounted) {
+            setSafetyState({
+              status: 'high',
+              message: 'High risk detected. Consider activating SOS and moving to a safer location.',
+              color: '#EF4444',
+            });
+          }
+          return;
+        }
+
+        const result = await evaluateLocationSafety(latitude, longitude);
+
+        lastAnalyzedCoords.current = {
+          latitude,
+          longitude,
+          timestamp: Date.now(),
+        };
+
+        if (isMounted) {
+          const newStatus = getSafetyStatusFromResult(result);
+          setSafetyState(newStatus);
+        }
+
+        await AsyncStorage.setItem(
+          'lastLocationSafetyResult',
+          JSON.stringify({
+            result,
+            coords: { latitude, longitude },
+            timestamp: Date.now(),
+          })
+        );
+        const mappedLevel = result.safetyLevel === 'caution' ? 'medium' : result.safetyLevel;
+        await AsyncStorage.setItem('currentRiskLevel', mappedLevel);
+        await AsyncStorage.setItem('currentRiskScore', result.riskScore.toString());
+      } catch (err) {
+        console.warn('Error evaluating location safety in Explore screen:', err);
+        if (isMounted) {
+          setSafetyState((prev) =>
+            prev.status === 'loading'
+              ? {
+                  status: 'loading',
+                  message: 'Checking your current safety status...',
+                  color: '#94A3B8',
+                }
+              : prev
+          );
+        }
+      } finally {
+        isAnalyzingRef.current = false;
+      }
+    };
+
+    runAnalysis();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [location, locationError]);
 
   const showComingSoon = (feature: string) => {
     Alert.alert(
