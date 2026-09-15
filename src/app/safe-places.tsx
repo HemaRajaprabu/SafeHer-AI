@@ -4,6 +4,7 @@ import {
   Alert,
   FlatList,
   Linking,
+  Platform,
   Pressable,
   StyleSheet,
   View,
@@ -27,13 +28,21 @@ interface SafePlace {
   address?: string;
 }
 
-type FilterCategory = 'all' | 'police' | 'hospital' | 'fire_station';
+interface UserCoordinates {
+  latitude: number;
+  longitude: number;
+  accuracy?: number | null;
+}
 
-// Resilient Overpass API interpreter endpoints for reliable failover
+type FilterCategory = 'all' | 'police' | 'hospital' | 'fire_station';
+type LocationStatus = 'loading' | 'granted' | 'permission_denied' | 'unavailable';
+
+// Resilient Overpass API interpreter endpoints for reliable failover on mobile web
 const OVERPASS_ENDPOINTS = [
   'https://overpass.openstreetmap.fr/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
   'https://overpass-api.de/api/interpreter',
-  'https://lz4.overpass-api.de/api/interpreter',
 ];
 
 // Haversine formula to compute distance between two coordinates
@@ -53,7 +62,7 @@ function getDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): 
 
 // Builds lightweight Overpass QL query returning node and way centroids
 function buildOverpassQuery(lat: number, lon: number, radiusMeters: number): string {
-  return `[out:json][timeout:6];
+  return `[out:json][timeout:15];
 (
   node["amenity"="police"](around:${radiusMeters},${lat},${lon});
   way["amenity"="police"](around:${radiusMeters},${lat},${lon});
@@ -67,16 +76,94 @@ function buildOverpassQuery(lat: number, lon: number, radiusMeters: number): str
 out center 40;`;
 }
 
+// Browser geolocation helper with graceful multi-stage accuracy for mobile browsers
+function getWebCoordinates(): Promise<UserCoordinates> {
+  return new Promise((resolve, reject) => {
+    if (typeof window === 'undefined' || !navigator?.geolocation) {
+      const err: any = new Error('Geolocation is not supported by your browser.');
+      err.code = 2; // POSITION_UNAVAILABLE
+      return reject(err);
+    }
+
+    // Two-stage retrieval:
+    // Stage 1: Try with enableHighAccuracy: true and 8-second timeout
+    // Stage 2: If high-accuracy times out or fails (e.g. mobile indoors), fallback to standard accuracy
+    const tryLowAccuracy = () => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          resolve({
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+          });
+        },
+        (err) => {
+          reject(err);
+        },
+        {
+          enableHighAccuracy: false,
+          timeout: 10000,
+          maximumAge: 60000, // accept cached position up to 1 minute
+        }
+      );
+    };
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        resolve({
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+        });
+      },
+      (err) => {
+        // If permission was explicitly denied, do not retry
+        if (err.code === 1) {
+          return reject(err);
+        }
+        // If high accuracy timed out or was unavailable, try standard accuracy
+        tryLowAccuracy();
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 8000,
+        maximumAge: 30000,
+      }
+    );
+  });
+}
+
 export default function SafePlacesScreen() {
   const theme = useTheme();
   const isDark = theme.text === '#ffffff';
 
   const {
-    location,
-    loading: locationLoading,
-    error: locationError,
-    refresh: refreshLocation,
+    location: hookLocation,
+    loading: hookLoading,
+    error: hookError,
+    errorType: hookErrorType,
+    refresh: refreshHookLocation,
   } = useLocation();
+
+  const [coords, setCoords] = useState<UserCoordinates | null>(() => {
+    if (hookLocation?.latitude && hookLocation?.longitude) {
+      return {
+        latitude: hookLocation.latitude,
+        longitude: hookLocation.longitude,
+        accuracy: hookLocation.accuracy,
+      };
+    }
+    return null;
+  });
+
+  const [locationStatus, setLocationStatus] = useState<LocationStatus>(() => {
+    if (hookLocation?.latitude && hookLocation?.longitude) {
+      return 'granted';
+    }
+    return 'loading';
+  });
+
+  const [locationMessage, setLocationMessage] = useState<string | null>(null);
 
   const [places, setPlaces] = useState<SafePlace[]>([]);
   const [placesLoading, setPlacesLoading] = useState(false);
@@ -101,11 +188,12 @@ export default function SafePlacesScreen() {
 
     const radiusMeters = Math.round(radiusKm * 1000);
     const query = buildOverpassQuery(lat, lon, radiusMeters);
+    const encodedQuery = encodeURIComponent(query);
 
     let rawData: any = null;
     let lastError: any = null;
 
-    // Failover across reliable Overpass mirrors
+    // Failover across reliable Overpass mirrors with mobile-safe GET and POST fallback
     for (let i = 0; i < OVERPASS_ENDPOINTS.length; i++) {
       if (currentRequestId !== activeRequestIdRef.current) {
         return;
@@ -114,18 +202,32 @@ export default function SafePlacesScreen() {
       const endpoint = OVERPASS_ENDPOINTS[i];
       const controller = new AbortController();
       abortControllerRef.current = controller;
-      const timeoutId = setTimeout(() => controller.abort(), 7500); // 7.5s client timeout
+      // 12s client timeout per mirror (mobile network friendly)
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
 
       try {
-        const response = await fetch(endpoint, {
-          method: 'POST',
+        // GET is the most reliable CORS request in mobile browsers
+        const getUrl = `${endpoint}?data=${encodedQuery}`;
+        let response = await fetch(getUrl, {
+          method: 'GET',
           headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'Accept': 'application/json',
+            Accept: 'application/json',
           },
-          body: `data=${encodeURIComponent(query)}`,
           signal: controller.signal,
         });
+
+        // If GET is rejected with 414 URI Too Long or 405 Method Not Allowed, fallback to POST
+        if (!response.ok && (response.status === 414 || response.status === 405)) {
+          response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              Accept: 'application/json',
+            },
+            body: `data=${encodedQuery}`,
+            signal: controller.signal,
+          });
+        }
 
         clearTimeout(timeoutId);
 
@@ -149,11 +251,11 @@ export default function SafePlacesScreen() {
           return;
         }
 
-        console.warn(`[SafePlaces] Endpoint ${endpoint} failed: ${err?.message || err}.`);
+        console.warn(`[SafePlaces] Endpoint ${endpoint} failed: ${err?.message || err}`);
 
         // Short delay before trying alternative endpoint
         if (i < OVERPASS_ENDPOINTS.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 400));
+          await new Promise((resolve) => setTimeout(resolve, 300));
         }
       }
     }
@@ -165,7 +267,7 @@ export default function SafePlacesScreen() {
 
     if (!rawData || !Array.isArray(rawData.elements)) {
       console.error('[SafePlaces] All Overpass API endpoints failed. Last error:', lastError?.message || lastError);
-      setApiError('Unable to load nearby safety spots due to network or server issues.');
+      setApiError('Unable to load nearby safety spots due to server or network issues. Please check your connection.');
       setPlacesLoading(false);
       return;
     }
@@ -254,6 +356,71 @@ export default function SafePlacesScreen() {
     setPlacesLoading(false);
   }, []);
 
+  const acquireLocation = useCallback(async (): Promise<UserCoordinates | null> => {
+    setLocationStatus('loading');
+    setLocationMessage(null);
+    setApiError(null);
+
+    if (Platform.OS === 'web') {
+      try {
+        const webCoords = await getWebCoordinates();
+        setCoords(webCoords);
+        setLocationStatus('granted');
+        setLocationMessage(null);
+        return webCoords;
+      } catch (err: any) {
+        console.warn('[SafePlaces] Web geolocation error:', err);
+        if (err?.code === 1) {
+          // PERMISSION_DENIED
+          setLocationStatus('permission_denied');
+          setLocationMessage(
+            'Location access was blocked. Please allow location permissions in your mobile browser settings to discover nearby safe spots.'
+          );
+        } else {
+          // POSITION_UNAVAILABLE or TIMEOUT
+          setLocationStatus('unavailable');
+          setLocationMessage(
+            'Unable to detect your current location. Please verify your device GPS is enabled and try again.'
+          );
+        }
+        return null;
+      }
+    } else {
+      // Native platforms use hook / expo-location
+      try {
+        const fresh = await refreshHookLocation();
+        if (fresh?.latitude && fresh?.longitude) {
+          const nativeCoords: UserCoordinates = {
+            latitude: fresh.latitude,
+            longitude: fresh.longitude,
+            accuracy: fresh.accuracy,
+          };
+          setCoords(nativeCoords);
+          setLocationStatus('granted');
+          setLocationMessage(null);
+          return nativeCoords;
+        } else {
+          if (hookErrorType === 'permission_denied') {
+            setLocationStatus('permission_denied');
+            setLocationMessage(
+              hookError || 'Location permission denied. Please allow location access in settings.'
+            );
+          } else {
+            setLocationStatus('unavailable');
+            setLocationMessage(
+              hookError || 'Unable to retrieve GPS location. Please check location settings.'
+            );
+          }
+          return null;
+        }
+      } catch (err: any) {
+        setLocationStatus('unavailable');
+        setLocationMessage('Failed to obtain device location.');
+        return null;
+      }
+    }
+  }, [refreshHookLocation, hookError, hookErrorType]);
+
   // Clean up any pending network requests on unmount
   useEffect(() => {
     return () => {
@@ -264,28 +431,61 @@ export default function SafePlacesScreen() {
     };
   }, []);
 
+  // Initial location acquisition on mount
   useEffect(() => {
-    if (location?.latitude && location?.longitude) {
-      const lat = location.latitude;
-      const lng = location.longitude;
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      void fetchNearbyPlaces(lat, lng, searchRadiusKm);
+    if (hookLocation?.latitude && hookLocation?.longitude) {
+      setCoords({
+        latitude: hookLocation.latitude,
+        longitude: hookLocation.longitude,
+        accuracy: hookLocation.accuracy,
+      });
+      setLocationStatus('granted');
+      return;
     }
-  }, [location?.latitude, location?.longitude, searchRadiusKm, fetchNearbyPlaces]);
+
+    if (Platform.OS === 'web') {
+      void acquireLocation();
+    } else if (!hookLoading) {
+      if (hookError) {
+        if (hookErrorType === 'permission_denied') {
+          setLocationStatus('permission_denied');
+          setLocationMessage(hookError);
+        } else {
+          setLocationStatus('unavailable');
+          setLocationMessage(hookError);
+        }
+      } else {
+        void acquireLocation();
+      }
+    }
+  }, [hookLocation?.latitude, hookLocation?.longitude, hookLoading, hookError, hookErrorType, acquireLocation]);
+
+  // Re-fetch places when coordinates or radius change
+  useEffect(() => {
+    if (coords?.latitude && coords?.longitude) {
+      void fetchNearbyPlaces(coords.latitude, coords.longitude, searchRadiusKm);
+    }
+  }, [coords?.latitude, coords?.longitude, searchRadiusKm, fetchNearbyPlaces]);
 
   const handleRefresh = useCallback(async () => {
     setApiError(null);
-    const loc = await refreshLocation();
-    const targetLat = loc?.latitude ?? location?.latitude;
-    const targetLon = loc?.longitude ?? location?.longitude;
-    if (targetLat && targetLon) {
-      void fetchNearbyPlaces(targetLat, targetLon, searchRadiusKm);
+    const refreshedCoords = await acquireLocation();
+    if (refreshedCoords?.latitude && refreshedCoords?.longitude) {
+      void fetchNearbyPlaces(refreshedCoords.latitude, refreshedCoords.longitude, searchRadiusKm);
     }
-  }, [refreshLocation, location?.latitude, location?.longitude, fetchNearbyPlaces, searchRadiusKm]);
+  }, [acquireLocation, fetchNearbyPlaces, searchRadiusKm]);
+
+  const handleRetrySearch = useCallback(() => {
+    if (coords?.latitude && coords?.longitude) {
+      void fetchNearbyPlaces(coords.latitude, coords.longitude, searchRadiusKm);
+    } else {
+      void handleRefresh();
+    }
+  }, [coords, fetchNearbyPlaces, searchRadiusKm, handleRefresh]);
 
   const openNavigation = async (place: SafePlace) => {
-    if (!location) return;
-    const url = `https://www.google.com/maps/dir/?api=1&origin=${location.latitude},${location.longitude}&destination=${place.latitude},${place.longitude}&travelmode=walking`;
+    if (!coords) return;
+    const url = `https://www.google.com/maps/dir/?api=1&origin=${coords.latitude},${coords.longitude}&destination=${place.latitude},${place.longitude}&travelmode=walking`;
     try {
       const supported = await Linking.canOpenURL(url);
       if (supported) {
@@ -320,6 +520,7 @@ export default function SafePlacesScreen() {
         return { name: 'map-pin', color: '#10B981', emoji: '📍' };
     }
   };
+
   const getCategoryLabel = () => {
     switch (activeCategory) {
       case 'police': return 'police stations';
@@ -367,7 +568,7 @@ export default function SafePlacesScreen() {
         </View>
 
         {/* User Location Bar */}
-        {location && (
+        {coords && (
           <View style={styles.locationBar}>
             <SymbolView
               name={{
@@ -379,7 +580,7 @@ export default function SafePlacesScreen() {
               tintColor={isDark ? '#A78BFA' : '#7C3AED'}
             />
             <ThemedText style={styles.locationBarText}>
-              Current GPS: {location?.latitude?.toFixed(5)}, {location?.longitude?.toFixed(5)}
+              Current GPS: {coords.latitude.toFixed(5)}, {coords.longitude.toFixed(5)}
             </ThemedText>
           </View>
         )}
@@ -424,14 +625,33 @@ export default function SafePlacesScreen() {
         </View>
 
         {/* Main content body */}
-        {locationLoading ? (
+        {locationStatus === 'loading' ? (
           <View style={styles.centerContainer}>
             <ActivityIndicator size="large" color="#7C3AED" />
             <ThemedText style={styles.loadingText} themeColor="textSecondary">
-              Retrieving hardware GPS location...
+              Retrieving current location...
             </ThemedText>
           </View>
-        ) : locationError ? (
+        ) : locationStatus === 'permission_denied' ? (
+          <View style={styles.centerContainer}>
+            <SymbolView
+              name={{
+                ios: 'location.slash.fill',
+                android: 'location_disabled',
+                web: 'location_off',
+              } as any}
+              size={48}
+              tintColor="#EF4444"
+            />
+            <ThemedText style={styles.errorTitle}>Location Permission Required</ThemedText>
+            <ThemedText style={styles.errorText} themeColor="textSecondary">
+              {locationMessage || 'Please allow location access in your browser settings so Safe Places can find emergency amenities near you.'}
+            </ThemedText>
+            <Pressable onPress={handleRefresh} style={styles.retryButton}>
+              <ThemedText style={styles.retryButtonText}>Grant Permission & Retry</ThemedText>
+            </Pressable>
+          </View>
+        ) : locationStatus === 'unavailable' || !coords ? (
           <View style={styles.centerContainer}>
             <SymbolView
               name={{
@@ -442,9 +662,9 @@ export default function SafePlacesScreen() {
               size={48}
               tintColor="#EF4444"
             />
-            <ThemedText style={styles.errorTitle}>Location Offline</ThemedText>
+            <ThemedText style={styles.errorTitle}>Location Unavailable</ThemedText>
             <ThemedText style={styles.errorText} themeColor="textSecondary">
-              {locationError}
+              {locationMessage || 'Unable to detect your current location. Please check your GPS signal and network.'}
             </ThemedText>
             <Pressable onPress={handleRefresh} style={styles.retryButton}>
               <ThemedText style={styles.retryButtonText}>Enable GPS & Retry</ThemedText>
@@ -472,7 +692,7 @@ export default function SafePlacesScreen() {
             <ThemedText style={styles.errorText} themeColor="textSecondary">
               {apiError}
             </ThemedText>
-            <Pressable onPress={handleRefresh} style={styles.retryButton}>
+            <Pressable onPress={handleRetrySearch} style={styles.retryButton}>
               <ThemedText style={styles.retryButtonText}>Retry Search</ThemedText>
             </Pressable>
           </View>
