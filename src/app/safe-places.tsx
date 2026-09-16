@@ -60,20 +60,36 @@ function getDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): 
   return R * c;
 }
 
-// Builds lightweight Overpass QL query returning node and way centroids
+// Builds lightweight Overpass QL query returning node, way, and relation centroids
 function buildOverpassQuery(lat: number, lon: number, radiusMeters: number): string {
   return `[out:json][timeout:15];
 (
   node["amenity"="police"](around:${radiusMeters},${lat},${lon});
   way["amenity"="police"](around:${radiusMeters},${lat},${lon});
+  relation["amenity"="police"](around:${radiusMeters},${lat},${lon});
+  node["amenity"="police_station"](around:${radiusMeters},${lat},${lon});
+  way["amenity"="police_station"](around:${radiusMeters},${lat},${lon});
+  node["police"](around:${radiusMeters},${lat},${lon});
+  way["police"](around:${radiusMeters},${lat},${lon});
+  relation["police"](around:${radiusMeters},${lat},${lon});
+  node["building"="police"](around:${radiusMeters},${lat},${lon});
+  way["building"="police"](around:${radiusMeters},${lat},${lon});
+  relation["building"="police"](around:${radiusMeters},${lat},${lon});
+  node["government"="police"](around:${radiusMeters},${lat},${lon});
+  way["government"="police"](around:${radiusMeters},${lat},${lon});
+  node["office"="police"](around:${radiusMeters},${lat},${lon});
+  way["office"="police"](around:${radiusMeters},${lat},${lon});
+)->.police;
+(
   node["amenity"="hospital"](around:${radiusMeters},${lat},${lon});
   way["amenity"="hospital"](around:${radiusMeters},${lat},${lon});
   node["amenity"="clinic"](around:${radiusMeters},${lat},${lon});
   way["amenity"="clinic"](around:${radiusMeters},${lat},${lon});
   node["amenity"="fire_station"](around:${radiusMeters},${lat},${lon});
   way["amenity"="fire_station"](around:${radiusMeters},${lat},${lon});
-);
-out center 40;`;
+)->.others;
+.police out center;
+.others out center 40;`;
 }
 
 // Browser geolocation helper with graceful multi-stage accuracy for mobile browsers
@@ -298,7 +314,19 @@ export default function SafePlacesScreen() {
       // Check category match
       let placeType: SafePlace['type'] | null = null;
       const amenity = el.tags?.amenity;
-      if (amenity === 'police') placeType = 'police';
+      const isPolice =
+        amenity === 'police' ||
+        amenity === 'police_station' ||
+        amenity === 'police_post' ||
+        amenity === 'police_office' ||
+        amenity === 'police_booth' ||
+        (Boolean(el.tags?.police) && el.tags?.police !== 'no' && el.tags?.police !== 'none') ||
+        el.tags?.building === 'police' ||
+        el.tags?.building === 'police_station' ||
+        el.tags?.government === 'police' ||
+        el.tags?.office === 'police';
+
+      if (isPolice) placeType = 'police';
       else if (amenity === 'hospital') placeType = 'hospital';
       else if (amenity === 'clinic') placeType = 'clinic';
       else if (amenity === 'fire_station') placeType = 'fire_station';
@@ -314,11 +342,25 @@ export default function SafePlacesScreen() {
       const distanceKm = getDistanceKm(lat, lon, placeLat, placeLon);
       if (distanceKm > radiusKm + 0.1) continue;
 
-      const name =
+      const rawName =
         el.tags?.name ||
+        el.tags?.['name:en'] ||
         el.tags?.brand ||
-        el.tags?.operator ||
-        `${placeType.replace('_', ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}`;
+        el.tags?.operator;
+
+      let name = rawName;
+      if (!name) {
+        if (placeType === 'police') {
+          const policeTag = el.tags?.police;
+          if (policeTag && typeof policeTag === 'string' && policeTag !== 'yes') {
+            name = `Police ${policeTag.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}`;
+          } else {
+            name = 'Police Station';
+          }
+        } else {
+          name = `${placeType.replace('_', ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}`;
+        }
+      }
 
       // Duplicate prevention by name & proximity (e.g. node inside way building)
       const normalizedName = name.toLowerCase().trim();
