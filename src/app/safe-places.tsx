@@ -37,60 +37,7 @@ interface UserCoordinates {
 type FilterCategory = 'all' | 'police' | 'hospital' | 'fire_station';
 type LocationStatus = 'loading' | 'granted' | 'permission_denied' | 'unavailable';
 
-// Resilient Overpass API interpreter endpoints for reliable failover on mobile web
-const OVERPASS_ENDPOINTS = [
-  'https://overpass.openstreetmap.fr/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter',
-  'https://overpass.private.coffee/api/interpreter',
-  'https://overpass-api.de/api/interpreter',
-];
 
-// Haversine formula to compute distance between two coordinates
-function getDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371; // Radius of the Earth in km
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
-
-// Builds lightweight Overpass QL query returning node, way, and relation centroids
-function buildOverpassQuery(lat: number, lon: number, radiusMeters: number): string {
-  return `[out:json][timeout:15];
-(
-  node["amenity"="police"](around:${radiusMeters},${lat},${lon});
-  way["amenity"="police"](around:${radiusMeters},${lat},${lon});
-  relation["amenity"="police"](around:${radiusMeters},${lat},${lon});
-  node["amenity"="police_station"](around:${radiusMeters},${lat},${lon});
-  way["amenity"="police_station"](around:${radiusMeters},${lat},${lon});
-  node["police"](around:${radiusMeters},${lat},${lon});
-  way["police"](around:${radiusMeters},${lat},${lon});
-  relation["police"](around:${radiusMeters},${lat},${lon});
-  node["building"="police"](around:${radiusMeters},${lat},${lon});
-  way["building"="police"](around:${radiusMeters},${lat},${lon});
-  relation["building"="police"](around:${radiusMeters},${lat},${lon});
-  node["government"="police"](around:${radiusMeters},${lat},${lon});
-  way["government"="police"](around:${radiusMeters},${lat},${lon});
-  node["office"="police"](around:${radiusMeters},${lat},${lon});
-  way["office"="police"](around:${radiusMeters},${lat},${lon});
-)->.police;
-(
-  node["amenity"="hospital"](around:${radiusMeters},${lat},${lon});
-  way["amenity"="hospital"](around:${radiusMeters},${lat},${lon});
-  node["amenity"="clinic"](around:${radiusMeters},${lat},${lon});
-  way["amenity"="clinic"](around:${radiusMeters},${lat},${lon});
-  node["amenity"="fire_station"](around:${radiusMeters},${lat},${lon});
-  way["amenity"="fire_station"](around:${radiusMeters},${lat},${lon});
-)->.others;
-.police out center;
-.others out center 40;`;
-}
 
 // Browser geolocation helper with graceful multi-stage accuracy for mobile browsers
 function getWebCoordinates(): Promise<UserCoordinates> {
@@ -202,200 +149,56 @@ export default function SafePlacesScreen() {
     setPlacesLoading(true);
     setApiError(null);
 
-    const radiusMeters = Math.round(radiusKm * 1000);
-    const query = buildOverpassQuery(lat, lon, radiusMeters);
-    const encodedQuery = encodeURIComponent(query);
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    const timeoutId = setTimeout(() => controller.abort(), 16000);
 
-    let rawData: any = null;
-    let lastError: any = null;
+    try {
+      const baseUrl =
+        typeof window !== 'undefined' && window.location?.origin
+          ? window.location.origin
+          : (process.env.EXPO_PUBLIC_API_URL || '');
+      const apiUrl = `${baseUrl}/api/safe-places?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&radius=${encodeURIComponent(radiusKm)}`;
 
-    // Failover across reliable Overpass mirrors with mobile-safe GET and POST fallback
-    for (let i = 0; i < OVERPASS_ENDPOINTS.length; i++) {
+      const response = await fetch(apiUrl, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+        },
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      // If superseded by a newer request, exit silently
       if (currentRequestId !== activeRequestIdRef.current) {
         return;
       }
 
-      const endpoint = OVERPASS_ENDPOINTS[i];
-      const controller = new AbortController();
-      abortControllerRef.current = controller;
-      // 12s client timeout per mirror (mobile network friendly)
-      const timeoutId = setTimeout(() => controller.abort(), 12000);
-
-      try {
-        // GET is the most reliable CORS request in mobile browsers
-        const getUrl = `${endpoint}?data=${encodedQuery}`;
-        let response = await fetch(getUrl, {
-          method: 'GET',
-          headers: {
-            Accept: 'application/json',
-          },
-          signal: controller.signal,
-        });
-
-        // If GET is rejected with 414 URI Too Long or 405 Method Not Allowed, fallback to POST
-        if (!response.ok && (response.status === 414 || response.status === 405)) {
-          response = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-              Accept: 'application/json',
-            },
-            body: `data=${encodedQuery}`,
-            signal: controller.signal,
-          });
-        }
-
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status} ${response.statusText}`);
-        }
-
-        const data = await response.json();
-        if (data && Array.isArray(data.elements)) {
-          rawData = data;
-          break; // Successfully received data
-        } else {
-          throw new Error('Invalid JSON structure from Overpass: missing elements array');
-        }
-      } catch (err: any) {
-        clearTimeout(timeoutId);
-        lastError = err;
-
-        // If superseded by a newer request, exit silently
-        if (currentRequestId !== activeRequestIdRef.current) {
-          return;
-        }
-
-        console.warn(`[SafePlaces] Endpoint ${endpoint} failed: ${err?.message || err}`);
-
-        // Short delay before trying alternative endpoint
-        if (i < OVERPASS_ENDPOINTS.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 300));
-        }
+      if (!response.ok) {
+        throw new Error(`Server returned HTTP ${response.status}`);
       }
-    }
 
-    // Ensure we are still handling the latest request
-    if (currentRequestId !== activeRequestIdRef.current) {
-      return;
-    }
+      const data = await response.json();
+      if (!data || !data.success || !Array.isArray(data.places)) {
+        throw new Error(data?.error || 'Invalid response from safe places server');
+      }
 
-    if (!rawData || !Array.isArray(rawData.elements)) {
-      console.error('[SafePlaces] All Overpass API endpoints failed. Last error:', lastError?.message || lastError);
+      setPlaces(data.places);
+      setApiError(null);
+      setPlacesLoading(false);
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+
+      // If superseded by a newer request, exit silently
+      if (currentRequestId !== activeRequestIdRef.current) {
+        return;
+      }
+
+      console.error('[SafePlaces] Server API fetch failed:', err?.message || err);
       setApiError('Unable to load nearby safety spots due to server or network issues. Please check your connection.');
       setPlacesLoading(false);
-      return;
     }
-
-    // Parse and filter real OSM elements
-    const seenIds = new Set<string>();
-    const parsedPlaces: SafePlace[] = [];
-
-    for (const el of rawData.elements) {
-      // Must have valid real coordinates (nodes have lat/lon; ways have center.lat/center.lon)
-      const placeLat =
-        typeof el.lat === 'number'
-          ? el.lat
-          : typeof el.center?.lat === 'number'
-          ? el.center.lat
-          : null;
-      const placeLon =
-        typeof el.lon === 'number'
-          ? el.lon
-          : typeof el.center?.lon === 'number'
-          ? el.center.lon
-          : null;
-
-      if (placeLat === null || placeLon === null) {
-        continue;
-      }
-
-      // Check category match
-      let placeType: SafePlace['type'] | null = null;
-      const amenity = el.tags?.amenity;
-      const isPolice =
-        amenity === 'police' ||
-        amenity === 'police_station' ||
-        amenity === 'police_post' ||
-        amenity === 'police_office' ||
-        amenity === 'police_booth' ||
-        (Boolean(el.tags?.police) && el.tags?.police !== 'no' && el.tags?.police !== 'none') ||
-        el.tags?.building === 'police' ||
-        el.tags?.building === 'police_station' ||
-        el.tags?.government === 'police' ||
-        el.tags?.office === 'police';
-
-      if (isPolice) placeType = 'police';
-      else if (amenity === 'hospital') placeType = 'hospital';
-      else if (amenity === 'clinic') placeType = 'clinic';
-      else if (amenity === 'fire_station') placeType = 'fire_station';
-
-      if (!placeType) continue;
-
-      // Duplicate prevention by ID
-      const uniqueKey = `${el.type || 'n'}-${el.id}`;
-      if (seenIds.has(uniqueKey)) continue;
-      seenIds.add(uniqueKey);
-
-      // Distance from user's current GPS location
-      const distanceKm = getDistanceKm(lat, lon, placeLat, placeLon);
-      if (distanceKm > radiusKm + 0.1) continue;
-
-      const rawName =
-        el.tags?.name ||
-        el.tags?.['name:en'] ||
-        el.tags?.brand ||
-        el.tags?.operator;
-
-      let name = rawName;
-      if (!name) {
-        if (placeType === 'police') {
-          const policeTag = el.tags?.police;
-          if (policeTag && typeof policeTag === 'string' && policeTag !== 'yes') {
-            name = `Police ${policeTag.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}`;
-          } else {
-            name = 'Police Station';
-          }
-        } else {
-          name = `${placeType.replace('_', ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}`;
-        }
-      }
-
-      // Duplicate prevention by name & proximity (e.g. node inside way building)
-      const normalizedName = name.toLowerCase().trim();
-      const isDuplicate = parsedPlaces.some(
-        (p) =>
-          p.name.toLowerCase().trim() === normalizedName &&
-          Math.abs(p.distanceKm - distanceKm) < 0.08
-      );
-      if (isDuplicate) continue;
-
-      const street = el.tags?.['addr:street'] || '';
-      const houseNumber = el.tags?.['addr:housenumber'] || '';
-      const city = el.tags?.['addr:city'] || '';
-      const address =
-        street || houseNumber || city
-          ? `${houseNumber} ${street}${street && city ? ', ' : ''}${city}`.trim()
-          : undefined;
-
-      parsedPlaces.push({
-        id: el.id,
-        name,
-        type: placeType,
-        latitude: placeLat,
-        longitude: placeLon,
-        distanceKm,
-        address,
-      });
-    }
-
-    // Sort by nearest distance first
-    parsedPlaces.sort((a, b) => a.distanceKm - b.distanceKm);
-
-    setPlaces(parsedPlaces);
-    setApiError(null);
-    setPlacesLoading(false);
   }, []);
 
   const acquireLocation = useCallback(async (): Promise<UserCoordinates | null> => {
