@@ -665,16 +665,96 @@ export async function fetchNearbySafetyInfrastructure(
   longitude: number,
   searchRadiusMeters: number = 2000
 ): Promise<SafetyInfrastructureData> {
+  const baseUrl =
+    typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin
+      : (process.env.EXPO_PUBLIC_API_URL || '');
+
+  // 1. In Web (or if server URL is configured), call the first-party server-side API endpoint
+  if (Platform.OS === 'web' || baseUrl) {
+    try {
+      const apiUrl = `${baseUrl}/api/ai-safety-zone?lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}&radius=${encodeURIComponent(searchRadiusMeters)}`;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 16000);
+
+      const response = await fetch(apiUrl, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        const json = await response.json();
+        if (json && json.fetchedSuccessfully) {
+          return {
+            nearbyPoliceStations: json.nearbyPoliceStations || [],
+            nearbyWomenPoliceStations: json.nearbyWomenPoliceStations || [],
+            nearbyHospitals: json.nearbyHospitals || [],
+            nearbyTransportHubs: json.nearbyTransportHubs || [],
+            nearbyLighting: json.nearbyLighting || {
+              litCount: 0,
+              unlitCount: 0,
+              summary: 'Street lighting data is temporarily unavailable.',
+              fetchedSuccessfully: false,
+            },
+            searchRadiusMeters: json.searchRadiusMeters || searchRadiusMeters,
+            fetchedSuccessfully: true,
+          };
+        } else if (json && json.errorMessage) {
+          return {
+            nearbyPoliceStations: [],
+            nearbyWomenPoliceStations: [],
+            nearbyHospitals: [],
+            nearbyTransportHubs: [],
+            nearbyLighting: {
+              litCount: 0,
+              unlitCount: 0,
+              summary: 'Street lighting data is temporarily unavailable.',
+              fetchedSuccessfully: false,
+            },
+            searchRadiusMeters,
+            fetchedSuccessfully: false,
+            errorMessage: json.errorMessage,
+          };
+        }
+      }
+    } catch (err: any) {
+      console.warn('[AISafetyZone] Server API call failed:', err?.message || err);
+      // In web, do not attempt direct browser Overpass calls which fail due to CORS
+      if (Platform.OS === 'web') {
+        return {
+          nearbyPoliceStations: [],
+          nearbyWomenPoliceStations: [],
+          nearbyHospitals: [],
+          nearbyTransportHubs: [],
+          nearbyLighting: {
+            litCount: 0,
+            unlitCount: 0,
+            summary: 'Street lighting data is temporarily unavailable.',
+            fetchedSuccessfully: false,
+          },
+          searchRadiusMeters,
+          fetchedSuccessfully: false,
+          errorMessage: 'Safety infrastructure data is temporarily unavailable.',
+        };
+      }
+    }
+  }
+
+  // 2. Native iOS/Android direct Overpass fallback (no browser CORS restrictions on native)
   const endpoints = [
+    'https://overpass.openstreetmap.fr/api/interpreter',
     'https://overpass-api.de/api/interpreter',
     'https://lz4.overpass-api.de/api/interpreter',
+    'https://z.overpass-api.de/api/interpreter',
   ];
 
   let rawData: any = null;
   let fetchError: string | null = null;
   let lightingQueried = false;
 
-  // 1. Try comprehensive query across available endpoints
+  // Try comprehensive query across available endpoints
   const comprehensiveQuery = buildOverpassQuery(latitude, longitude, searchRadiusMeters);
   for (const endpoint of endpoints) {
     try {
@@ -708,10 +788,10 @@ export async function fetchNearbySafetyInfrastructure(
     }
   }
 
-  // 2. If comprehensive query failed, try lean emergency fallback query
+  // If comprehensive query failed, try lean emergency fallback query
   if (!rawData || !Array.isArray(rawData.elements)) {
     const fallbackQuery = buildFallbackOverpassQuery(latitude, longitude, Math.min(searchRadiusMeters, 1500));
-    for (const endpoint of [endpoints[1], endpoints[0]]) {
+    for (const endpoint of endpoints) {
       try {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5500);
@@ -742,7 +822,7 @@ export async function fetchNearbySafetyInfrastructure(
     }
   }
 
-  // 3. If all attempts failed: return clean failure state without fake facilities
+  // If all attempts failed: return clean failure state without fake facilities
   if (!rawData || !Array.isArray(rawData.elements)) {
     return {
       nearbyPoliceStations: [],
