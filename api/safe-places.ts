@@ -1,10 +1,4 @@
-let httpsModule: any = null;
-try {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  httpsModule = typeof require !== 'undefined' ? require('https') : null;
-} catch {
-  // Fallback for runtimes without require
-}
+import https from 'https';
 
 export interface SafePlace {
   id: number;
@@ -18,14 +12,14 @@ export interface SafePlace {
 
 // Resilient Overpass API interpreter endpoints for reliable server-side failover
 const OVERPASS_ENDPOINTS = [
-  'https://overpass-api.de/api/interpreter',
   'https://overpass.openstreetmap.fr/api/interpreter',
+  'https://overpass-api.de/api/interpreter',
   'https://lz4.overpass-api.de/api/interpreter',
   'https://z.overpass-api.de/api/interpreter',
 ];
 
 // Haversine formula to compute distance between two coordinates in km
-function getDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+export function getDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371; // Earth radius in km
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLon = ((lon2 - lon1) * Math.PI) / 180;
@@ -43,29 +37,19 @@ function getDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): 
 export function buildOverpassQuery(lat: number, lon: number, radiusMeters: number): string {
   return `[out:json][timeout:15];
 (
-  node["amenity"="police"](around:${radiusMeters},${lat},${lon});
-  way["amenity"="police"](around:${radiusMeters},${lat},${lon});
-  relation["amenity"="police"](around:${radiusMeters},${lat},${lon});
-  node["amenity"="police_station"](around:${radiusMeters},${lat},${lon});
-  way["amenity"="police_station"](around:${radiusMeters},${lat},${lon});
-  node["police"](around:${radiusMeters},${lat},${lon});
-  way["police"](around:${radiusMeters},${lat},${lon});
-  relation["police"](around:${radiusMeters},${lat},${lon});
-  node["building"="police"](around:${radiusMeters},${lat},${lon});
-  way["building"="police"](around:${radiusMeters},${lat},${lon});
-  relation["building"="police"](around:${radiusMeters},${lat},${lon});
-  node["government"="police"](around:${radiusMeters},${lat},${lon});
-  way["government"="police"](around:${radiusMeters},${lat},${lon});
-  node["office"="police"](around:${radiusMeters},${lat},${lon});
-  way["office"="police"](around:${radiusMeters},${lat},${lon});
+  nwr["amenity"="police"](around:${radiusMeters},${lat},${lon});
+  nwr["police"="station"](around:${radiusMeters},${lat},${lon});
+  nwr["amenity"="police_station"](around:${radiusMeters},${lat},${lon});
+  nwr["police"](around:${radiusMeters},${lat},${lon});
+  nwr["building"="police"](around:${radiusMeters},${lat},${lon});
+  nwr["building"="police_station"](around:${radiusMeters},${lat},${lon});
+  nwr["government"="police"](around:${radiusMeters},${lat},${lon});
+  nwr["office"="police"](around:${radiusMeters},${lat},${lon});
 )->.police;
 (
-  node["amenity"="hospital"](around:${radiusMeters},${lat},${lon});
-  way["amenity"="hospital"](around:${radiusMeters},${lat},${lon});
-  node["amenity"="clinic"](around:${radiusMeters},${lat},${lon});
-  way["amenity"="clinic"](around:${radiusMeters},${lat},${lon});
-  node["amenity"="fire_station"](around:${radiusMeters},${lat},${lon});
-  way["amenity"="fire_station"](around:${radiusMeters},${lat},${lon});
+  nwr["amenity"="hospital"](around:${radiusMeters},${lat},${lon});
+  nwr["amenity"="clinic"](around:${radiusMeters},${lat},${lon});
+  nwr["amenity"="fire_station"](around:${radiusMeters},${lat},${lon});
 )->.others;
 .police out center;
 .others out center 40;`;
@@ -101,13 +85,14 @@ export function parseOverpassElements(
 
     let placeType: SafePlace['type'] | null = null;
     const amenity = el.tags?.amenity;
+    const policeTag = el.tags?.police;
     const isPolice =
       amenity === 'police' ||
       amenity === 'police_station' ||
       amenity === 'police_post' ||
       amenity === 'police_office' ||
       amenity === 'police_booth' ||
-      (Boolean(el.tags?.police) && el.tags?.police !== 'no' && el.tags?.police !== 'none') ||
+      (Boolean(policeTag) && policeTag !== 'no' && policeTag !== 'none' && policeTag !== 'false') ||
       el.tags?.building === 'police' ||
       el.tags?.building === 'police_station' ||
       el.tags?.government === 'police' ||
@@ -136,7 +121,6 @@ export function parseOverpassElements(
     let name = rawName;
     if (!name) {
       if (placeType === 'police') {
-        const policeTag = el.tags?.police;
         if (policeTag && typeof policeTag === 'string' && policeTag !== 'yes') {
           name = `Police ${policeTag.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}`;
         } else {
@@ -148,10 +132,11 @@ export function parseOverpassElements(
     }
 
     const normalizedName = name.toLowerCase().trim();
+    // Spatial deduplication: verify if an identical name exists at the same physical location (within 80m)
     const isDuplicate = parsedPlaces.some(
       (p) =>
         p.name.toLowerCase().trim() === normalizedName &&
-        Math.abs(p.distanceKm - distanceKm) < 0.08
+        getDistanceKm(p.latitude, p.longitude, placeLat, placeLon) < 0.08
     );
     if (isDuplicate) continue;
 
@@ -178,26 +163,30 @@ export function parseOverpassElements(
   return parsedPlaces;
 }
 
-// Server-to-server HTTPS request with custom User-Agent and IPv4 preference
-function fetchOverpassServer(endpointUrl: string): Promise<any> {
+// Server-to-server HTTPS POST request with custom User-Agent, IPv4 preference, and socket timeout
+function fetchOverpassServer(endpointUrl: string, query: string): Promise<any> {
   return new Promise((resolve, reject) => {
     try {
-      if (httpsModule && typeof httpsModule.request === 'function') {
-        const parsedUrl = new URL(endpointUrl);
+      const parsedUrl = new URL(endpointUrl);
+      const postData = `data=${encodeURIComponent(query)}`;
+
+      if (https && typeof https.request === 'function') {
         const options = {
           hostname: parsedUrl.hostname,
           port: parsedUrl.port || 443,
-          path: parsedUrl.pathname + parsedUrl.search,
-          method: 'GET',
+          path: parsedUrl.pathname,
+          method: 'POST',
           headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Content-Length': Buffer.byteLength(postData),
             'User-Agent': 'SafeHer-AI/1.0 (Safety Services; contact: https://github.com/HemaRajaprabu/SafeHer-AI)',
             Accept: 'application/json',
           },
           family: 4, // Explicit IPv4 to prevent unreachable IPv6 routes
-          timeout: 12000,
+          timeout: 6000,
         };
 
-        const req = httpsModule.request(options, (res: any) => {
+        const req = https.request(options, (res: any) => {
           if (res.statusCode && (res.statusCode < 200 || res.statusCode >= 300)) {
             res.resume();
             return reject(new Error(`Upstream Overpass returned HTTP ${res.statusCode}`));
@@ -227,14 +216,18 @@ function fetchOverpassServer(endpointUrl: string): Promise<any> {
           reject(err);
         });
 
+        req.write(postData);
         req.end();
       } else {
         // Fallback to fetch for runtimes where https module is absent
         fetch(endpointUrl, {
+          method: 'POST',
           headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
             'User-Agent': 'SafeHer-AI/1.0 (Safety Services; contact: https://github.com/HemaRajaprabu/SafeHer-AI)',
             Accept: 'application/json',
           },
+          body: postData,
         })
           .then(async (res) => {
             if (!res.ok) throw new Error(`Upstream Overpass returned HTTP ${res.status}`);
@@ -252,12 +245,13 @@ function fetchOverpassServer(endpointUrl: string): Promise<any> {
 /**
  * Vercel Serverless Function Handler for Safe Places Overpass Proxy.
  * Proxies Overpass API requests server-to-server to avoid browser CORS and User-Agent blocks.
+ * Completely free, open-data solution with zero API cost.
  */
 export default async function handler(req: any, res: any) {
   // CORS Headers
   if (res?.setHeader) {
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     res.setHeader('Cache-Control', 's-maxage=120, stale-while-revalidate=240');
   }
@@ -269,7 +263,7 @@ export default async function handler(req: any, res: any) {
       status: 200,
       headers: {
         'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type',
       },
     });
@@ -278,24 +272,38 @@ export default async function handler(req: any, res: any) {
   try {
     let lat = 0;
     let lon = 0;
-    let radiusKm = 3;
+    let radiusKm = 10;
+    let radiusMeters = 10000;
+
+    let rawRadius: string | null = null;
 
     // Parse query parameters
     if (req?.query) {
       lat = parseFloat(req.query.lat || req.query.latitude || '0');
       lon = parseFloat(req.query.lon || req.query.lng || req.query.longitude || '0');
-      if (req.query.radius || req.query.radiusKm) {
-        radiusKm = parseFloat(req.query.radius || req.query.radiusKm);
-      }
+      rawRadius = req.query.radius || req.query.radiusKm || null;
     } else if (req?.url) {
       try {
         const urlObj = new URL(req.url, 'http://localhost');
         lat = parseFloat(urlObj.searchParams.get('lat') || urlObj.searchParams.get('latitude') || '0');
         lon = parseFloat(urlObj.searchParams.get('lon') || urlObj.searchParams.get('lng') || urlObj.searchParams.get('longitude') || '0');
-        const r = urlObj.searchParams.get('radius') || urlObj.searchParams.get('radiusKm');
-        if (r) radiusKm = parseFloat(r);
+        rawRadius = urlObj.searchParams.get('radius') || urlObj.searchParams.get('radiusKm') || null;
       } catch {
         // Ignore URL parse errors
+      }
+    }
+
+    // Transparently handle radius specified in meters (e.g. 10000) or km (e.g. 10 or 3)
+    if (rawRadius) {
+      const parsed = parseFloat(rawRadius);
+      if (!isNaN(parsed) && parsed > 0) {
+        if (parsed > 100) {
+          radiusMeters = Math.round(parsed);
+          radiusKm = radiusMeters / 1000;
+        } else {
+          radiusKm = parsed;
+          radiusMeters = Math.round(parsed * 1000);
+        }
       }
     }
 
@@ -312,20 +320,17 @@ export default async function handler(req: any, res: any) {
       });
     }
 
-    const radiusMeters = Math.round((radiusKm || 3) * 1000);
     const query = buildOverpassQuery(lat, lon, radiusMeters);
-    const encodedQuery = encodeURIComponent(query);
 
     let rawData: any = null;
     let lastError: any = null;
 
-    // Failover across Overpass mirrors
+    // Failover across Overpass mirrors using standard HTTP POST
     for (let i = 0; i < OVERPASS_ENDPOINTS.length; i++) {
       const endpoint = OVERPASS_ENDPOINTS[i];
-      const getUrl = `${endpoint}?data=${encodedQuery}`;
 
       try {
-        rawData = await fetchOverpassServer(getUrl);
+        rawData = await fetchOverpassServer(endpoint, query);
         if (rawData && Array.isArray(rawData.elements)) {
           break;
         } else {
