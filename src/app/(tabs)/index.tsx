@@ -62,7 +62,7 @@ export default function HomeScreen() {
           showsVerticalScrollIndicator={false}
         >
           {/* Header Section */}
-          <View style={styles.heroSection}>
+          <View style={[styles.heroSection, width < 640 && styles.heroSectionMobile]}>
             <Text style={[styles.title, { fontSize: width < 640 ? 38 : 52, lineHeight: width < 640 ? 44 : 60 }, styles.titleGradient]}>
               SafeHer AI
             </Text>
@@ -490,6 +490,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingTop: 16,
     paddingBottom: 8,
+  },
+  heroSectionMobile: {
+    paddingTop: 64,
   },
   title: {
     textAlign: 'center',
