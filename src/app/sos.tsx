@@ -21,7 +21,6 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useAuth } from '@/hooks/use-auth';
 import { useLocation } from '@/hooks/use-location';
-import { useVoiceSOS } from '@/hooks/voice-sos-provider';
 import { supabase } from '@/utils/supabase';
 
 const { SmsModule } = NativeModules;
@@ -44,7 +43,6 @@ export default function SOSScreen() {
     const smsSentRef = useRef(false);
 
     const params = useLocalSearchParams();
-    const { setVoiceSOSEnabled } = useVoiceSOS();
 
     const { user } = useAuth();
     const {
@@ -369,10 +367,12 @@ export default function SOSScreen() {
     // Activation trigger - runs once when isActivated becomes true
     useEffect(() => {
         if (isActivated && !smsSentRef.current) {
-            void playSOSSound();
+            if (params.silent !== 'true') {
+                void playSOSSound();
+            }
             void handleSOSAlertDispatch();
         }
-    }, [isActivated, handleSOSAlertDispatch]);
+    }, [isActivated, handleSOSAlertDispatch, params.silent]);
 
     const startSOS = useCallback(() => {
         setCountdown(5);
@@ -396,23 +396,6 @@ export default function SOSScreen() {
         smsSentRef.current = false;
         setNotificationStatus('idle');
     };
-
-    // Auto-start SOS if redirected via Voice Trigger
-    useEffect(() => {
-        if (params.autoStart === 'true') {
-            const timer = setTimeout(() => {
-                startSOS();
-            }, 0);
-            return () => clearTimeout(timer);
-        }
-    }, [params.autoStart, startSOS]);
-
-    // Disable Voice SOS monitoring when SOS starts or becomes active
-    useEffect(() => {
-        if (isCounting || isActivated) {
-            setVoiceSOSEnabled(false);
-        }
-    }, [isCounting, isActivated, setVoiceSOSEnabled]);
 
     const callEmergency = async () => {
         const phoneNumber = '112';

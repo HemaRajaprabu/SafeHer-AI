@@ -64,11 +64,12 @@ export default function AISafetyZoneScreen() {
         return;
       }
 
-      // 2. Query real OpenStreetMap infrastructure & run Gemini analysis
+      // 2. Query real OpenStreetMap infrastructure & run Gemini analysis (force live refresh if re-checking)
       const result = await analyzeSafetyZone(
         coords.latitude,
         coords.longitude,
-        coords.accuracy
+        coords.accuracy,
+        Boolean(assessment)
       );
 
       setAssessment(result);
@@ -359,104 +360,150 @@ export default function AISafetyZoneScreen() {
                   </View>
                 </View>
 
-                {/* Police Stations */}
-                <View style={styles.facilitySection}>
-                  <View style={styles.subHeaderRow}>
+                {!assessment.infrastructure.fetchedSuccessfully ? (
+                  <View style={styles.dataUnavailableBox}>
                     <SymbolView
-                      name={{ ios: 'shield.fill', android: 'local_police', web: 'local_police' } as any}
-                      size={17}
-                      tintColor="#3B82F6"
+                      name={{ ios: 'wifi.slash', android: 'cloud_off', web: 'cloud_off' } as any}
+                      size={20}
+                      tintColor={isDark ? '#F87171' : '#DC2626'}
                     />
-                    <ThemedText style={styles.facilityCategoryTitle}>Police Stations</ThemedText>
-                    {assessment.infrastructure.nearbyPoliceStations.length > 0 && (
-                      <ThemedText themeColor="textSecondary" style={styles.categoryCount}>
-                        ({assessment.infrastructure.nearbyPoliceStations.length} found)
+                    <View style={styles.dataUnavailableTextWrap}>
+                      <ThemedText style={styles.dataUnavailableText}>
+                        Safety infrastructure data is temporarily unavailable.
                       </ThemedText>
-                    )}
+                      <ThemedText style={styles.dataUnavailableSubtext}>
+                        Street lighting data is temporarily unavailable.
+                      </ThemedText>
+                    </View>
                   </View>
-                  {assessment.infrastructure.nearbyPoliceStations.length > 0 ? (
-                    <View style={styles.facilitiesList}>
-                      {assessment.infrastructure.nearbyPoliceStations.map(p =>
-                        renderFacilityRow(p, 'shield.fill', '#3B82F6')
+                ) : (
+                  <>
+                    {assessment.infrastructure.nearbyPoliceStations.length === 0 &&
+                    assessment.infrastructure.nearbyHospitals.length === 0 &&
+                    assessment.infrastructure.nearbyTransportHubs.length === 0 ? (
+                      <View style={styles.emptyInfrastructureNotice}>
+                        <SymbolView
+                          name={{ ios: 'info.circle', android: 'info', web: 'info' } as any}
+                          size={18}
+                          tintColor="#3B82F6"
+                        />
+                        <View style={styles.emptyInfrastructureTextWrap}>
+                          <ThemedText style={styles.emptyInfrastructureTitle}>
+                            No mapped safety infrastructure found within the selected radius.
+                          </ThemedText>
+                          <ThemedText themeColor="textSecondary" style={styles.emptyInfrastructureSubtitle}>
+                            This reflects available OpenStreetMap records and does not guarantee that no facilities exist in this area.
+                          </ThemedText>
+                        </View>
+                      </View>
+                    ) : null}
+
+                    {/* Police Stations */}
+                    <View style={styles.facilitySection}>
+                      <View style={styles.subHeaderRow}>
+                        <SymbolView
+                          name={{ ios: 'shield.fill', android: 'local_police', web: 'local_police' } as any}
+                          size={17}
+                          tintColor="#3B82F6"
+                        />
+                        <ThemedText style={styles.facilityCategoryTitle}>Police Stations</ThemedText>
+                        {assessment.infrastructure.nearbyPoliceStations.length > 0 && (
+                          <ThemedText themeColor="textSecondary" style={styles.categoryCount}>
+                            ({assessment.infrastructure.nearbyPoliceStations.length} found)
+                          </ThemedText>
+                        )}
+                      </View>
+                      {assessment.infrastructure.nearbyPoliceStations.length > 0 ? (
+                        <View style={styles.facilitiesList}>
+                          {assessment.infrastructure.nearbyPoliceStations.map(p =>
+                            renderFacilityRow(p, 'shield.fill', '#3B82F6')
+                          )}
+                        </View>
+                      ) : (
+                        <ThemedText themeColor="textSecondary" style={styles.emptyFacilityText}>
+                          No mapped police stations found in the selected radius.
+                        </ThemedText>
                       )}
                     </View>
-                  ) : (
-                    <ThemedText themeColor="textSecondary" style={styles.emptyFacilityText}>
-                      No nearby police stations found in the selected radius.
-                    </ThemedText>
-                  )}
-                </View>
 
-                {/* Hospitals & Medical */}
-                <View style={styles.facilitySection}>
-                  <View style={styles.subHeaderRow}>
-                    <SymbolView
-                      name={{ ios: 'cross.case.fill', android: 'local_hospital', web: 'local_hospital' } as any}
-                      size={17}
-                      tintColor="#EF4444"
-                    />
-                    <ThemedText style={styles.facilityCategoryTitle}>Hospitals & Medical</ThemedText>
-                    {assessment.infrastructure.nearbyHospitals.length > 0 && (
-                      <ThemedText themeColor="textSecondary" style={styles.categoryCount}>
-                        ({assessment.infrastructure.nearbyHospitals.length} found)
-                      </ThemedText>
-                    )}
-                  </View>
-                  {assessment.infrastructure.nearbyHospitals.length > 0 ? (
-                    <View style={styles.facilitiesList}>
-                      {assessment.infrastructure.nearbyHospitals.map(h =>
-                        renderFacilityRow(h, 'cross.case.fill', '#EF4444')
+                    {/* Hospitals & Medical */}
+                    <View style={styles.facilitySection}>
+                      <View style={styles.subHeaderRow}>
+                        <SymbolView
+                          name={{ ios: 'cross.case.fill', android: 'local_hospital', web: 'local_hospital' } as any}
+                          size={17}
+                          tintColor="#EF4444"
+                        />
+                        <ThemedText style={styles.facilityCategoryTitle}>Hospitals & Medical</ThemedText>
+                        {assessment.infrastructure.nearbyHospitals.length > 0 && (
+                          <ThemedText themeColor="textSecondary" style={styles.categoryCount}>
+                            ({assessment.infrastructure.nearbyHospitals.length} found)
+                          </ThemedText>
+                        )}
+                      </View>
+                      {assessment.infrastructure.nearbyHospitals.length > 0 ? (
+                        <View style={styles.facilitiesList}>
+                          {assessment.infrastructure.nearbyHospitals.map(h =>
+                            renderFacilityRow(h, 'cross.case.fill', '#EF4444')
+                          )}
+                        </View>
+                      ) : (
+                        <ThemedText themeColor="textSecondary" style={styles.emptyFacilityText}>
+                          No mapped hospitals or clinics found in the selected radius.
+                        </ThemedText>
                       )}
                     </View>
-                  ) : (
-                    <ThemedText themeColor="textSecondary" style={styles.emptyFacilityText}>
-                      No nearby hospitals found in the selected radius.
-                    </ThemedText>
-                  )}
-                </View>
 
-                {/* Transport Hubs */}
-                <View style={styles.facilitySection}>
-                  <View style={styles.subHeaderRow}>
-                    <SymbolView
-                      name={{ ios: 'bus.fill', android: 'directions_bus', web: 'directions_bus' } as any}
-                      size={17}
-                      tintColor="#10B981"
-                    />
-                    <ThemedText style={styles.facilityCategoryTitle}>Transport Hubs</ThemedText>
-                    {assessment.infrastructure.nearbyTransportHubs.length > 0 && (
-                      <ThemedText themeColor="textSecondary" style={styles.categoryCount}>
-                        ({assessment.infrastructure.nearbyTransportHubs.length} found)
-                      </ThemedText>
-                    )}
-                  </View>
-                  {assessment.infrastructure.nearbyTransportHubs.length > 0 ? (
-                    <View style={styles.facilitiesList}>
-                      {assessment.infrastructure.nearbyTransportHubs.map(t =>
-                        renderFacilityRow(t, 'bus.fill', '#10B981')
+                    {/* Transport Hubs */}
+                    <View style={styles.facilitySection}>
+                      <View style={styles.subHeaderRow}>
+                        <SymbolView
+                          name={{ ios: 'bus.fill', android: 'directions_bus', web: 'directions_bus' } as any}
+                          size={17}
+                          tintColor="#10B981"
+                        />
+                        <ThemedText style={styles.facilityCategoryTitle}>Transport Hubs</ThemedText>
+                        {assessment.infrastructure.nearbyTransportHubs.length > 0 && (
+                          <ThemedText themeColor="textSecondary" style={styles.categoryCount}>
+                            ({assessment.infrastructure.nearbyTransportHubs.length} found)
+                          </ThemedText>
+                        )}
+                      </View>
+                      {assessment.infrastructure.nearbyTransportHubs.length > 0 ? (
+                        <View style={styles.facilitiesList}>
+                          {assessment.infrastructure.nearbyTransportHubs.map(t =>
+                            renderFacilityRow(t, 'bus.fill', '#10B981')
+                          )}
+                        </View>
+                      ) : (
+                        <ThemedText themeColor="textSecondary" style={styles.emptyFacilityText}>
+                          No mapped transport hubs found in the selected radius.
+                        </ThemedText>
                       )}
                     </View>
-                  ) : (
-                    <ThemedText themeColor="textSecondary" style={styles.emptyFacilityText}>
-                      No nearby transport hubs found in the selected radius.
-                    </ThemedText>
-                  )}
-                </View>
 
-                {/* Street Lighting Information */}
-                <View style={styles.facilitySection}>
-                  <View style={styles.subHeaderRow}>
-                    <SymbolView
-                      name={{ ios: 'lightbulb.fill', android: 'lightbulb', web: 'lightbulb' } as any}
-                      size={17}
-                      tintColor="#F59E0B"
-                    />
-                    <ThemedText style={styles.facilityCategoryTitle}>Street Lighting (500m)</ThemedText>
-                  </View>
-                  <ThemedText themeColor="textSecondary" style={styles.lightingSummaryText}>
-                    💡 {assessment.infrastructure.nearbyLighting.summary}
-                  </ThemedText>
-                </View>
+                    {/* Street Lighting Information */}
+                    <View style={styles.facilitySection}>
+                      <View style={styles.subHeaderRow}>
+                        <SymbolView
+                          name={{ ios: 'lightbulb.fill', android: 'lightbulb', web: 'lightbulb' } as any}
+                          size={17}
+                          tintColor="#F59E0B"
+                        />
+                        <ThemedText style={styles.facilityCategoryTitle}>Street Lighting (500m)</ThemedText>
+                      </View>
+                      {assessment.infrastructure.nearbyLighting.fetchedSuccessfully === false ? (
+                        <ThemedText themeColor="textSecondary" style={styles.emptyFacilityText}>
+                          Street lighting data is temporarily unavailable.
+                        </ThemedText>
+                      ) : (
+                        <ThemedText themeColor="textSecondary" style={styles.lightingSummaryText}>
+                          💡 {assessment.infrastructure.nearbyLighting.summary}
+                        </ThemedText>
+                      )}
+                    </View>
+                  </>
+                )}
               </View>
 
               {/* 3. RECENT SAFETY INFORMATION SECTION (LAYER 2) */}
@@ -536,14 +583,19 @@ export default function AISafetyZoneScreen() {
                     ))}
                   </View>
                 ) : (
-                  <View style={styles.newsStatusRow}>
-                    <SymbolView
-                      name={{ ios: 'checkmark.shield', android: 'check_circle', web: 'check_circle' } as any}
-                      size={18}
-                      tintColor="#10B981"
-                    />
-                    <ThemedText themeColor="textSecondary" style={styles.newsStatusText}>
-                      No recent public safety advisories or incidents found for this area in the past 7 days.
+                  <View style={styles.newsEmptyContainer}>
+                    <View style={styles.newsStatusRow}>
+                      <SymbolView
+                        name={{ ios: 'checkmark.shield', android: 'check_circle', web: 'check_circle' } as any}
+                        size={18}
+                        tintColor="#10B981"
+                      />
+                      <ThemedText themeColor="textSecondary" style={styles.newsStatusText}>
+                        No recent public safety advisories or incidents found for this area in the past 7 days.
+                      </ThemedText>
+                    </View>
+                    <ThemedText themeColor="textSecondary" style={styles.newsClarificationText}>
+                      (This indicates that no matching public news was found, not that no incidents occurred.)
                     </ThemedText>
                   </View>
                 )}
@@ -1150,5 +1202,61 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: '#3B82F6',
+  },
+  dataUnavailableBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.25)',
+    marginVertical: 4,
+  },
+  dataUnavailableTextWrap: {
+    flex: 1,
+    gap: 2,
+  },
+  dataUnavailableText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
+  dataUnavailableSubtext: {
+    fontSize: 12,
+    color: '#EF4444',
+  },
+  emptyInfrastructureNotice: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(59, 130, 246, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.2)',
+    marginBottom: 8,
+  },
+  emptyInfrastructureTextWrap: {
+    flex: 1,
+    gap: 2,
+  },
+  emptyInfrastructureTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  emptyInfrastructureSubtitle: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  newsEmptyContainer: {
+    gap: 4,
+  },
+  newsClarificationText: {
+    fontSize: 11,
+    fontStyle: 'italic',
+    paddingLeft: 28,
+    lineHeight: 15,
   },
 });

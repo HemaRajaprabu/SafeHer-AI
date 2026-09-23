@@ -1,45 +1,46 @@
 import { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
+    ActivityIndicator,
     Alert,
     Pressable,
     ScrollView,
     StyleSheet,
     Switch,
-    TextInput,
     View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
+import { router } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { useVoiceSOS } from '@/hooks/voice-sos-provider';
 import { useTheme } from '@/hooks/use-theme';
-
-const PREDEFINED_PHRASES = ['help help', 'danger danger', 'emergency', 'safeher activate'];
+import { useAuth } from '@/hooks/use-auth';
+import { MaxContentWidth } from '@/constants/theme';
 
 export default function SettingsScreen() {
     const theme = useTheme();
+    const { user, profile, signOut } = useAuth();
     const [automaticSOS, setAutomaticSOS] = useState(false);
     const [autoLocationMonitoring, setAutoLocationMonitoring] = useState(false);
+    const [isLoggingOut, setIsLoggingOut] = useState(false);
+    const [logoutError, setLogoutError] = useState<string | null>(null);
 
-    const {
-        voiceSOSEnabled,
-        voiceSOSStatus,
-        emergencyPhrase,
-        transcription,
-        setVoiceSOSEnabled,
-        setEmergencyPhrase,
-    } = useVoiceSOS();
-
-    const [customPhraseInput, setCustomPhraseInput] = useState(
-        !PREDEFINED_PHRASES.includes(emergencyPhrase) ? emergencyPhrase : ''
-    );
-
-    const handleCustomPhraseChange = (text: string) => {
-        setCustomPhraseInput(text);
-        setEmergencyPhrase(text);
+    const handleLogout = async () => {
+        try {
+            setIsLoggingOut(true);
+            setLogoutError(null);
+            await signOut();
+            router.replace('/');
+        } catch (err: any) {
+            console.error('Logout error:', err);
+            const msg = err?.message || 'Failed to sign out. Please try again.';
+            setLogoutError(msg);
+            Alert.alert('Logout Error', msg);
+        } finally {
+            setIsLoggingOut(false);
+        }
     };
 
     useEffect(() => {
@@ -120,7 +121,23 @@ export default function SettingsScreen() {
                 >
                     {/* Header */}
                     <View style={styles.header}>
-                        <View style={styles.headerSpace} />
+                        <Pressable
+                            onPress={() => router.back()}
+                            style={({ pressed }) => [
+                                styles.backButton,
+                                pressed && styles.pressed,
+                            ]}
+                        >
+                            <SymbolView
+                                name={{
+                                    ios: 'chevron.left',
+                                    android: 'arrow_back',
+                                    web: 'arrow_back',
+                                } as any}
+                                size={24}
+                                tintColor={theme.text}
+                            />
+                        </Pressable>
 
                         <ThemedText style={styles.headerTitle}>
                             Safety Settings
@@ -235,135 +252,6 @@ export default function SettingsScreen() {
                         </ThemedText>
                     </View>
 
-                    {/* 🎙️ Voice SOS Trigger */}
-                    <View style={styles.section}>
-                        <ThemedText style={styles.sectionTitle}>
-                            🎙️ Voice SOS Trigger
-                        </ThemedText>
-
-                        <ThemedText style={styles.sectionDescription}>
-                            Trigger emergency assistance hands-free using your voice. All processing is done locally on your device for absolute privacy.
-                        </ThemedText>
-
-                        {/* Voice SOS Toggle */}
-                        <View style={styles.settingCard}>
-                            <View style={[styles.iconContainer, { backgroundColor: '#EC4899' }]}>
-                                <SymbolView
-                                    name={{
-                                        ios: 'mic.fill',
-                                        android: 'mic',
-                                        web: 'mic',
-                                    }}
-                                    size={26}
-                                    tintColor="#FFFFFF"
-                                />
-                            </View>
-
-                            <View style={styles.settingInfo}>
-                                <ThemedText style={styles.settingTitle}>
-                                    Voice Activation
-                                </ThemedText>
-
-                                <ThemedText style={styles.settingDescription}>
-                                    Start monitoring microphone to detect the emergency phrase.
-                                </ThemedText>
-                            </View>
-
-                            <Switch
-                                value={voiceSOSEnabled}
-                                onValueChange={setVoiceSOSEnabled}
-                            />
-                        </View>
-
-                        {/* Phrase Selector */}
-                        {voiceSOSEnabled && (
-                            <View style={styles.phraseContainer}>
-                                <ThemedText style={styles.settingTitle}>Emergency Phrase</ThemedText>
-                                <ThemedText style={styles.settingDescription}>
-                                    Select or type the phrase to trigger SOS. Say this phrase clearly in the foreground.
-                                </ThemedText>
-                                <View style={styles.phraseSelector}>
-                                    {PREDEFINED_PHRASES.map((phrase) => (
-                                        <Pressable
-                                            key={phrase}
-                                            onPress={() => setEmergencyPhrase(phrase)}
-                                            style={[
-                                                styles.phraseOption,
-                                                emergencyPhrase === phrase && styles.phraseOptionSelected
-                                            ]}
-                                        >
-                                            <ThemedText style={[
-                                                styles.phraseOptionText,
-                                                emergencyPhrase === phrase && styles.phraseOptionTextSelected
-                                            ]}>
-                                                &quot;{phrase}&quot;
-                                            </ThemedText>
-                                        </Pressable>
-                                    ))}
-                                    <Pressable
-                                        onPress={() => setEmergencyPhrase('')}
-                                        style={[
-                                            styles.phraseOption,
-                                            !PREDEFINED_PHRASES.includes(emergencyPhrase) && styles.phraseOptionSelected
-                                        ]}
-                                    >
-                                        <ThemedText style={[
-                                            styles.phraseOptionText,
-                                            !PREDEFINED_PHRASES.includes(emergencyPhrase) && styles.phraseOptionTextSelected
-                                        ]}>
-                                            Custom
-                                        </ThemedText>
-                                    </Pressable>
-                                </View>
-
-                                {!PREDEFINED_PHRASES.includes(emergencyPhrase) && (
-                                    <TextInput
-                                        style={styles.customInput}
-                                        value={customPhraseInput}
-                                        onChangeText={handleCustomPhraseChange}
-                                        placeholder="Type custom phrase (e.g. 'help me now')"
-                                        placeholderTextColor="#94A3B8"
-                                        autoCapitalize="none"
-                                        autoCorrect={false}
-                                    />
-                                )}
-                            </View>
-                        )}
-                    </View>
-
-                    {/* Voice SOS Status Card */}
-                    <View
-                        style={[
-                            styles.statusCard,
-                            voiceSOSEnabled
-                                ? (voiceSOSStatus === 'listening' ? styles.statusListening : styles.statusEnabled)
-                                : (voiceSOSStatus === 'permission_denied' ? styles.statusError : styles.statusDisabled),
-                        ]}
-                    >
-                        <ThemedText style={styles.statusTitle}>
-                            {voiceSOSStatus === 'listening' && '🔊 Voice SOS: Listening'}
-                            {voiceSOSStatus === 'on' && '🟢 Voice SOS: ON'}
-                            {voiceSOSStatus === 'off' && '⚪ Voice SOS: OFF'}
-                            {voiceSOSStatus === 'permission_denied' && '🔴 Microphone Permission Denied'}
-                            {voiceSOSStatus === 'error' && '🔴 Voice SOS: Error'}
-                        </ThemedText>
-
-                        <ThemedText style={styles.statusText}>
-                            {voiceSOSStatus === 'listening' && 'Microphone is actively monitoring. Try speaking the emergency phrase clearly.'}
-                            {voiceSOSStatus === 'on' && 'Monitoring is enabled but paused. It will run when the app is in the foreground.'}
-                            {voiceSOSStatus === 'off' && 'Voice SOS monitoring is OFF.'}
-                            {voiceSOSStatus === 'permission_denied' && 'Speech recognition or microphone permissions were denied. Please enable them in your device Settings.'}
-                            {voiceSOSStatus === 'error' && 'An error occurred with the local voice recognition system.'}
-                        </ThemedText>
-
-                        {voiceSOSStatus === 'listening' && transcription !== '' && (
-                            <View style={styles.transcriptionContainer}>
-                                <ThemedText style={styles.transcriptionLabel}>Live Speech Transcript:</ThemedText>
-                                <ThemedText style={styles.transcriptionText}>&quot;{transcription}&quot;</ThemedText>
-                            </View>
-                        )}
-                    </View>
-
                     {/* How it works */}
                     <View style={styles.infoCard}>
                         <ThemedText style={styles.infoTitle}>
@@ -474,6 +362,90 @@ export default function SettingsScreen() {
                         </View>
                     </View>
 
+                    {/* Account & Session */}
+                    <View style={styles.section}>
+                        <View style={styles.sectionHeaderRow}>
+                            <SymbolView
+                                name={{
+                                    ios: 'person.crop.circle',
+                                    android: 'account_circle',
+                                    web: 'account_circle',
+                                } as any}
+                                size={24}
+                                tintColor={theme.text}
+                            />
+                            <ThemedText style={styles.sectionTitle}>
+                                Account & Session
+                            </ThemedText>
+                        </View>
+
+                        <ThemedText style={styles.sectionDescription}>
+                            Signed in as {user?.email || profile?.email || 'SafeHer User'}.
+                        </ThemedText>
+
+                        {logoutError && (
+                            <View style={styles.logoutErrorContainer}>
+                                <SymbolView
+                                    name={{
+                                        ios: 'exclamationmark.circle.fill',
+                                        android: 'error',
+                                        web: 'error',
+                                    } as any}
+                                    size={16}
+                                    tintColor="#EF4444"
+                                />
+                                <ThemedText style={styles.logoutErrorText}>
+                                    {logoutError}
+                                </ThemedText>
+                            </View>
+                        )}
+
+                        <Pressable
+                            onPress={handleLogout}
+                            disabled={isLoggingOut}
+                            style={({ pressed }) => [
+                                styles.logoutCard,
+                                pressed && styles.pressed,
+                                isLoggingOut && styles.disabled,
+                            ]}
+                        >
+                            <View style={styles.logoutIconContainer}>
+                                <SymbolView
+                                    name={{
+                                        ios: 'rectangle.portrait.and.arrow.right',
+                                        android: 'logout',
+                                        web: 'logout',
+                                    } as any}
+                                    size={24}
+                                    tintColor="#EF4444"
+                                />
+                            </View>
+
+                            <View style={styles.settingInfo}>
+                                <ThemedText style={styles.logoutTitle}>
+                                    Log Out
+                                </ThemedText>
+                                <ThemedText style={styles.settingDescription}>
+                                    End your current session and return to login
+                                </ThemedText>
+                            </View>
+
+                            {isLoggingOut ? (
+                                <ActivityIndicator size="small" color="#EF4444" />
+                            ) : (
+                                <SymbolView
+                                    name={{
+                                        ios: 'chevron.right',
+                                        android: 'chevron_right',
+                                        web: 'chevron_right',
+                                    } as any}
+                                    size={20}
+                                    tintColor="#94A3B8"
+                                />
+                            )}
+                        </Pressable>
+                    </View>
+
                     <ThemedText style={styles.disclaimer}>
                         Automatic SOS should be configured according to your
                         safety preferences. Always contact emergency services
@@ -493,6 +465,9 @@ const styles = StyleSheet.create({
 
     safeArea: {
         flex: 1,
+        maxWidth: MaxContentWidth,
+        width: '100%',
+        alignSelf: 'center',
     },
 
     content: {
@@ -505,6 +480,19 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'space-between',
         paddingVertical: 16,
+    },
+
+    backButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: '#FFFFFF',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+
+    pressed: {
+        opacity: 0.7,
     },
 
     headerTitle: {
@@ -685,71 +673,51 @@ const styles = StyleSheet.create({
         lineHeight: 17,
         marginTop: 25,
     },
-    phraseContainer: {
-        marginTop: 20,
-        paddingTop: 16,
-        borderTopWidth: 1,
-        borderTopColor: '#E2E8F0',
-    },
-    phraseSelector: {
+
+    logoutCard: {
         flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 8,
-        marginTop: 10,
-    },
-    phraseOption: {
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        borderRadius: 8,
-        backgroundColor: '#F1F5F9',
-        borderWidth: 1,
-        borderColor: '#E2E8F0',
-    },
-    phraseOptionSelected: {
-        backgroundColor: '#7C3AED',
-        borderColor: '#7C3AED',
-    },
-    phraseOptionText: {
-        fontSize: 13,
-        color: '#475569',
-    },
-    phraseOptionTextSelected: {
-        color: '#FFFFFF',
-        fontWeight: 'bold',
-    },
-    customInput: {
-        borderWidth: 1,
-        borderColor: '#CBD5E1',
-        borderRadius: 10,
-        padding: 12,
-        marginTop: 10,
+        alignItems: 'center',
+        marginTop: 16,
+        padding: 18,
+        borderRadius: 20,
         backgroundColor: '#FFFFFF',
-        fontSize: 14,
-        color: '#1E293B',
+        elevation: 3,
+        borderWidth: 1,
+        borderColor: '#FEE2E2',
     },
-    statusListening: {
-        backgroundColor: '#F0FDF4',
-        borderColor: '#86EFAC',
-    },
-    statusError: {
+
+    logoutIconContainer: {
+        width: 50,
+        height: 50,
+        borderRadius: 25,
         backgroundColor: '#FEF2F2',
-        borderColor: '#FCA5A5',
+        alignItems: 'center',
+        justifyContent: 'center',
     },
-    transcriptionContainer: {
+
+    logoutTitle: {
+        fontSize: 17,
+        fontWeight: '800',
+        color: '#EF4444',
+    },
+
+    disabled: {
+        opacity: 0.6,
+    },
+
+    logoutErrorContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        padding: 12,
+        borderRadius: 12,
+        backgroundColor: 'rgba(239, 68, 68, 0.1)',
         marginTop: 12,
-        paddingTop: 8,
-        borderTopWidth: 1,
-        borderTopColor: 'rgba(0,0,0,0.06)',
     },
-    transcriptionLabel: {
-        fontSize: 12,
-        fontWeight: '700',
-        color: '#64748B',
-    },
-    transcriptionText: {
-        fontSize: 14,
-        fontStyle: 'italic',
-        color: '#1E293B',
-        marginTop: 2,
+
+    logoutErrorText: {
+        color: '#EF4444',
+        fontSize: 13,
+        flex: 1,
     },
 });
