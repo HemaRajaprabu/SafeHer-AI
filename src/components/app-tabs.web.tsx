@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   Tabs,
   TabList,
@@ -7,12 +8,14 @@ import {
   TabListProps,
 } from 'expo-router/ui';
 import { SymbolView } from 'expo-symbols';
-import { Pressable, View, StyleSheet } from 'react-native';
+import { Alert, Pressable, View, StyleSheet } from 'react-native';
+import { router } from 'expo-router';
 
 import { ThemedText } from './themed-text';
 import { ThemedView } from './themed-view';
 
 import { Spacing } from '@/constants/theme';
+import { useAuth } from '@/hooks/use-auth';
 
 export default function AppTabs() {
   return (
@@ -50,6 +53,39 @@ export function TabButton({ children, isFocused, ...props }: TabTriggerSlotProps
   );
 }
 
+export function LogoutTabButton() {
+  const { signOut } = useAuth();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const handleLogout = async () => {
+    if (isLoggingOut) return;
+    try {
+      setIsLoggingOut(true);
+      await signOut();
+      router.replace('/');
+    } catch (err: any) {
+      console.error('Logout error:', err);
+      Alert.alert('Logout Error', err?.message || 'Failed to sign out. Please try again.');
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
+
+  return (
+    <Pressable
+      onPress={handleLogout}
+      disabled={isLoggingOut}
+      style={({ pressed }) => pressed && styles.pressed}
+    >
+      <View style={[styles.tabButtonView, styles.tabButtonInactive]}>
+        <ThemedText type="small" style={styles.tabButtonText}>
+          {isLoggingOut ? 'Logging out...' : 'Logout'}
+        </ThemedText>
+      </View>
+    </Pressable>
+  );
+}
+
 export function CustomTabList(props: TabListProps) {
   return (
     <View {...props} style={styles.tabListContainer}>
@@ -69,6 +105,7 @@ export function CustomTabList(props: TabListProps) {
 
         <View style={styles.tabTriggersRow}>
           {props.children}
+          <LogoutTabButton />
         </View>
       </ThemedView>
     </View>
