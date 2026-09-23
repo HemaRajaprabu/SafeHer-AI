@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
+    ActivityIndicator,
     Alert,
     Pressable,
     ScrollView,
@@ -15,12 +16,32 @@ import { router } from 'expo-router';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useTheme } from '@/hooks/use-theme';
+import { useAuth } from '@/hooks/use-auth';
 import { MaxContentWidth } from '@/constants/theme';
 
 export default function SettingsScreen() {
     const theme = useTheme();
+    const { user, profile, signOut } = useAuth();
     const [automaticSOS, setAutomaticSOS] = useState(false);
     const [autoLocationMonitoring, setAutoLocationMonitoring] = useState(false);
+    const [isLoggingOut, setIsLoggingOut] = useState(false);
+    const [logoutError, setLogoutError] = useState<string | null>(null);
+
+    const handleLogout = async () => {
+        try {
+            setIsLoggingOut(true);
+            setLogoutError(null);
+            await signOut();
+            router.replace('/');
+        } catch (err: any) {
+            console.error('Logout error:', err);
+            const msg = err?.message || 'Failed to sign out. Please try again.';
+            setLogoutError(msg);
+            Alert.alert('Logout Error', msg);
+        } finally {
+            setIsLoggingOut(false);
+        }
+    };
 
     useEffect(() => {
         const loadAutomaticSOS = async () => {
@@ -341,6 +362,90 @@ export default function SettingsScreen() {
                         </View>
                     </View>
 
+                    {/* Account & Session */}
+                    <View style={styles.section}>
+                        <View style={styles.sectionHeaderRow}>
+                            <SymbolView
+                                name={{
+                                    ios: 'person.crop.circle',
+                                    android: 'account_circle',
+                                    web: 'account_circle',
+                                } as any}
+                                size={24}
+                                tintColor={theme.text}
+                            />
+                            <ThemedText style={styles.sectionTitle}>
+                                Account & Session
+                            </ThemedText>
+                        </View>
+
+                        <ThemedText style={styles.sectionDescription}>
+                            Signed in as {user?.email || profile?.email || 'SafeHer User'}.
+                        </ThemedText>
+
+                        {logoutError && (
+                            <View style={styles.logoutErrorContainer}>
+                                <SymbolView
+                                    name={{
+                                        ios: 'exclamationmark.circle.fill',
+                                        android: 'error',
+                                        web: 'error',
+                                    } as any}
+                                    size={16}
+                                    tintColor="#EF4444"
+                                />
+                                <ThemedText style={styles.logoutErrorText}>
+                                    {logoutError}
+                                </ThemedText>
+                            </View>
+                        )}
+
+                        <Pressable
+                            onPress={handleLogout}
+                            disabled={isLoggingOut}
+                            style={({ pressed }) => [
+                                styles.logoutCard,
+                                pressed && styles.pressed,
+                                isLoggingOut && styles.disabled,
+                            ]}
+                        >
+                            <View style={styles.logoutIconContainer}>
+                                <SymbolView
+                                    name={{
+                                        ios: 'rectangle.portrait.and.arrow.right',
+                                        android: 'logout',
+                                        web: 'logout',
+                                    } as any}
+                                    size={24}
+                                    tintColor="#EF4444"
+                                />
+                            </View>
+
+                            <View style={styles.settingInfo}>
+                                <ThemedText style={styles.logoutTitle}>
+                                    Log Out
+                                </ThemedText>
+                                <ThemedText style={styles.settingDescription}>
+                                    End your current session and return to login
+                                </ThemedText>
+                            </View>
+
+                            {isLoggingOut ? (
+                                <ActivityIndicator size="small" color="#EF4444" />
+                            ) : (
+                                <SymbolView
+                                    name={{
+                                        ios: 'chevron.right',
+                                        android: 'chevron_right',
+                                        web: 'chevron_right',
+                                    } as any}
+                                    size={20}
+                                    tintColor="#94A3B8"
+                                />
+                            )}
+                        </Pressable>
+                    </View>
+
                     <ThemedText style={styles.disclaimer}>
                         Automatic SOS should be configured according to your
                         safety preferences. Always contact emergency services
@@ -567,5 +672,52 @@ const styles = StyleSheet.create({
         fontSize: 11,
         lineHeight: 17,
         marginTop: 25,
+    },
+
+    logoutCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 16,
+        padding: 18,
+        borderRadius: 20,
+        backgroundColor: '#FFFFFF',
+        elevation: 3,
+        borderWidth: 1,
+        borderColor: '#FEE2E2',
+    },
+
+    logoutIconContainer: {
+        width: 50,
+        height: 50,
+        borderRadius: 25,
+        backgroundColor: '#FEF2F2',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+
+    logoutTitle: {
+        fontSize: 17,
+        fontWeight: '800',
+        color: '#EF4444',
+    },
+
+    disabled: {
+        opacity: 0.6,
+    },
+
+    logoutErrorContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        padding: 12,
+        borderRadius: 12,
+        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+        marginTop: 12,
+    },
+
+    logoutErrorText: {
+        color: '#EF4444',
+        fontSize: 13,
+        flex: 1,
     },
 });

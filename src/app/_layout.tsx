@@ -1,4 +1,5 @@
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import { useEffect } from 'react';
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider, usePathname, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { ActivityIndicator, StyleSheet, useColorScheme } from 'react-native';
 
@@ -13,6 +14,14 @@ SplashScreen.preventAutoHideAsync();
 
 function AuthOrApp() {
   const { session, loading } = useAuth();
+  const pathname = usePathname();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading && !session && pathname !== '/') {
+      router.replace('/');
+    }
+  }, [session, loading, pathname, router]);
 
   if (loading) {
     return (
